@@ -25,6 +25,9 @@ import androidx.core.graphics.withTranslation
 import androidx.core.graphics.withRotation
 import androidx.core.view.isVisible
 
+// 悬浮小人使用独立的 sprite 帧图片
+// 运行时的 PoseFrame（用于微动作/节拍驱动的动态效果）。
+
 class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
     // Indicates if the position is locked
     private var isLocked = false
@@ -34,8 +37,6 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
     // 上一帧pose缓存及插值参数
     // 贝塞尔插值器（与运动控制器参数一致，ease-in-out）
     private val bezierInterpolator = CubicBezierInterpolator(0.42f, 0f, 0.58f, 1f)
-    private var lastPoseFrame: PoseFrame? = null
-    private var lastPoseTimestamp: Long = 0L
 
     private data class LayerSprite(
         val bitmap: Bitmap,
@@ -43,20 +44,8 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
         val pivotYRatio: Float,
     )
 
-    private enum class AvatarPose {
-        POSE1,
-        POSE2,
-        POSE3,
-        POSE4,
-        POSE5,
-        POSE6,
-        POSE7,
-        POSE8,
-        POSE9,
-        POSE10,
-        POSE11,
-        POSE12,
-    }
+    private var lastPoseFrame: PoseFrame? = null
+    private var lastPoseTimestamp: Long = 0L
 
     private data class DepthProfile(
         val avatarScale: Float,
@@ -67,7 +56,7 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
         val apertureAlpha: Float,
     )
 
-    private data class PoseFrame(
+    data class PoseFrame(
         val bodyAngle: Float,
         val leftArmAngle: Float,
         val rightArmAngle: Float,
@@ -216,8 +205,8 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
     private val meshHeight = 20
     private val meshVerts = FloatArray((meshWidth + 1) * (meshHeight + 1) * 2)
     private val meshVertsAlt = FloatArray((meshWidth + 1) * (meshHeight + 1) * 2)
-    // 如果为 false，则使用简单缩放的位图绘制精灵帧，而不是网格变形。
-    // 默认禁用网格以避免变形不匹配/重影问题。设置为 true 可重新启用基于网格的变形以获得更具表现力的动作。
+    // midVerts 用于在混合两帧时保存合并后的顶点，复用以避免每帧分配
+    private val midVerts = FloatArray((meshWidth + 1) * (meshHeight + 1) * 2)
     private var useMeshForSprites = false
 
     // 运行时可配置的锚点偏移（百分比），用于垂直微调头像位置。
@@ -242,9 +231,6 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
     private var danceStyle = DanceStyle.CHILL
     private var playbackState = PlaybackDanceState.STOPPED
     private var songChangeBoost = 0f
-    private var poseProgress = 0f
-    private var currentPoseIndex = 0
-    private var nextPoseIndex = 1
     private var spriteFrameProgress = 0f
     private var beatCounter = 0
     // 回退渲染状态已迁移为 OpenGL ES 兼容类型（OpenGLESFallbackRenderState）
@@ -257,11 +243,13 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
 
     private var lastBeatTimestampMs = 0L
     // 略慢的默认节拍间隔，使头像对音乐的跟随显得更从容/滞后一些
-    private var beatIntervalMs = 770L
+    private var beatIntervalMs = 800L
 
-    // 动作切换冷却机制
-    private var lastPoseSwitchTimestampMs = 0L
-    private val minPoseSwitchIntervalMs = 220L // 每个动作最少持续220ms，防止频繁切换
+    // Pending beat event recorded from onBeat(); consumed once per animator frame to debounce
+    private var pendingBeatEvent: BeatEvent? = null
+    // 最后被 animator 消耗的节拍时间戳，用于去重
+    private var lastProcessedBeatTimestampMs: Long = 0L
+
     private var lastSpriteSwitchTimestampMs = 0L
     private val minSpriteSwitchIntervalMs = 120L
 
@@ -302,16 +290,9 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
                 PlaybackDanceState.PAUSED -> 0.0048f + songChangeBoost * 0.014f
                 PlaybackDanceState.STOPPED, PlaybackDanceState.IDLE -> 0.0022f + songChangeBoost * 0.01f
             }
-            // 如果我们正在等待首个节拍，则保持静止姿态（仅执行微动作与阻尼），
-            // 以便在没有音乐时显示 begin 精灵而不切换帧。
+            // 如果我们正在等待首个节拍，则保持静止（仅执行微动作与阻尼），
+            // 这里已移除基于预置 Pose 的序列逻辑，保留精灵帧推进（sprite animation）
             if (!awaitingFirstBeat) {
-                poseProgress += poseSpeed * motionScale
-                val poseSequenceSize = poseSequence().size
-                while (poseSequenceSize > 0 && poseProgress >= 1f) {
-                    poseProgress -= 1f
-                    currentPoseIndex = nextPoseIndex
-                    nextPoseIndex = (nextPoseIndex + 1) % poseSequenceSize
-                }
 
                 if (avatarSpriteFrames.size > 1 && spriteStepSequence().size > 1) {
                     val spriteSpeed = when (playbackState) {
@@ -327,6 +308,15 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
                 } else {
                     spriteFrameProgress = 0f
                 }
+
+                    // 每帧消费一次挂起的节拍事件以去抖，保证在渲染循环中统一处理节拍引起的重状态变更
+                    pendingBeatEvent?.let { ev ->
+                        if (ev.timestampMs > lastProcessedBeatTimestampMs) {
+                            consumePendingBeat(ev)
+                            lastProcessedBeatTimestampMs = ev.timestampMs
+                        }
+                        pendingBeatEvent = null
+                    }
             }
 
             invalidate()
@@ -361,6 +351,8 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
 
     init {
         loadBeginEndSprites()
+
+        // Built-in poses are defined in `builtInPoses` above; external registration removed.
 
         // Initialize the "锁定位置" preference
         val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
@@ -498,7 +490,6 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
         resetPoseChoreography()
         resetSpriteChoreography()
         spriteFrameProgress = 0.16f
-        poseProgress = 0.1f
         pendingBeginRunnable?.let { removeCallbacks(it); pendingBeginRunnable = null }
         awaitingFirstBeat = true
         isAtEnd = true
@@ -506,7 +497,8 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
     }
 
     override fun onBeat(event: BeatEvent) {
-        val section = currentSection()
+        // Lightweight timing/energy updates; heavy state transitions will be
+        // consumed once per animator frame (debounced) via pendingBeatEvent.
         if (lastBeatTimestampMs > 0L) {
             val interval = event.timestampMs - lastBeatTimestampMs
             if (interval in 240L..1_050L) {
@@ -525,27 +517,17 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
         isAtBegin = false
         isAtEnd = false
 
-        val poseSequenceSize = poseSequence().size
+        // Record pending beat; animator will consume it once per frame. If multiple
+        // beats arrive quickly, only the newest pending beat will be kept for processing.
+        if (pendingBeatEvent == null || event.timestampMs > (pendingBeatEvent?.timestampMs ?: 0L)) {
+            pendingBeatEvent = event
+        }
+    }
+
+    private fun consumePendingBeat(event: BeatEvent) {
+        val section = currentSection()
         val now = System.currentTimeMillis()
-        // 动作切换冷却，防止频繁切换或回跳
-        if (event.strength >= 0.7f) {
-            poseProgress = (poseProgress + 0.34f).coerceAtMost(0.98f)
-        }
-        if (event.strength >= 0.84f && poseSequenceSize > 0 && (now - lastPoseSwitchTimestampMs > minPoseSwitchIntervalMs)) {
-            val accentAdvance = when {
-                songChangeBoost > 0.28f -> 2
-                section == DanceSection.CHORUS && event.strength >= 0.9f -> 2
-                else -> 1
-            }
-            val nextIndex = (currentPoseIndex + accentAdvance) % poseSequenceSize
-            // 避免来回切换：只有下一个动作和当前动作不同才切换
-            if (nextIndex != currentPoseIndex) {
-                currentPoseIndex = nextIndex
-                nextPoseIndex = (currentPoseIndex + 1) % poseSequenceSize
-                poseProgress = 0.08f
-                lastPoseSwitchTimestampMs = now
-            }
-        }
+
         // sprite帧切换冷却
         if (avatarSpriteFrames.size > 1 && spriteStepSequence().size > 1 && (now - lastSpriteSwitchTimestampMs > minSpriteSwitchIntervalMs)) {
             val denseFrameBonus = if (avatarSpriteFrames.size >= maxAvatarSpriteFrames) 1 else 0
@@ -561,7 +543,7 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
             spriteFrameProgress = when {
                 songChangeBoost > 0.28f || event.strength >= 0.9f -> 0.24f + audioLevel * 0.18f
                 event.strength >= 0.78f -> 0.16f + audioLevel * 0.14f
-                else -> 0.08f + event.strength.coerceIn(0f, 1f) * 0.2f + audioLevel * 0.08f
+                else -> 0.08f + event.strength.coerceAtLeast(0f).coerceAtMost(1f) * 0.2f + audioLevel * 0.08f
             }.coerceAtMost(0.94f)
             lastSpriteSwitchTimestampMs = now
         }
@@ -576,13 +558,9 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
         beatCounter += 1
         spriteChoreographyEngine.refresh(spriteChoreographyContext(), force = true)
 
-        // If we were awaiting the first beat, the arrival of a beat means we should
-        // stop awaiting and ensure any standby/end sprite is cleared so regular
-        // animation resumes. Do not show the begin sprite here (avoid transient
-        // begin image during active playback).
+        // 如果在等待首个节拍，则到达节拍应取消等待并清理 begin/end 状态
         if (awaitingFirstBeat) {
             awaitingFirstBeat = false
-            // Clear any pending runnables and ensure end sprite is hidden
             pendingBeginRunnable?.let { removeCallbacks(it); pendingBeginRunnable = null }
             pendingEndRunnable?.let { removeCallbacks(it); pendingEndRunnable = null }
             isAtEnd = false
@@ -632,9 +610,26 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
         applyPalette(energy)
         drawStage(canvas, cx, cy, unit, beatWave, energy, depthProfile)
 
-        val frame = blendedFrame()
-            .withDynamics(phase, energy, danceStyle)
-        drawCharacter(canvas, cx, cy, unit, frame, beatWave, energy, depthProfile)
+        // 直接计算基于节拍/微动作的动态 PoseFrame
+        val frame = computeDynamicPose(phase, energy, danceStyle)
+        val unifiedScale = fallbackRenderState.breathScale * fallbackRenderState.spritePulseScale
+        drawCharacter(canvas, cx, cy, unit, frame, beatWave, energy, depthProfile, unifiedScale)
+
+        // 调试覆盖层：显示关键状态，便于复现与定位重影问题
+        if (debugOverlayEnabled) {
+            val selection = spriteChoreographyEngine.selection(spriteChoreographyContext())
+            val pair = resolveSpritePair()
+            val currentIdx = selection?.currentFrameIndex ?: -1
+            val nextIdx = selection?.nextFrameIndex ?: -1
+            val info = listOf(
+                "playback=$playbackState",
+                "current=$currentIdx",
+                "next=$nextIdx",
+                "spriteProgress=${"%.2f".format(spriteFrameProgress)}",
+                "transitionRecommended=${selection?.transitionRecommended ?: false}",
+            ).joinToString(" | ")
+            canvas.drawText(info, 8f * resources.displayMetrics.density, 16f * resources.displayMetrics.density, debugTextPaint)
+        }
     }
 
     private fun drawStage(
@@ -747,6 +742,7 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
         beatWave: Float,
         energy: Float,
         depthProfile: DepthProfile,
+        unifiedScale: Float,
     ) {
         // pose帧平滑插值
         val now = System.currentTimeMillis()
@@ -785,10 +781,9 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
 
         canvas.save()
         // Ensure consistent scaling for the floating avatar
-        val unifiedScale = fallbackRenderState.breathScale * fallbackRenderState.spritePulseScale
         canvas.scale(unifiedScale, unifiedScale, centerX, centerY)
 
-        if (drawSingleSpriteCharacter(canvas, centerX, centerY, unit, smoothFrame, beatWave, energy)) {
+        if (drawSingleSpriteCharacter(canvas, centerX, centerY, unit, smoothFrame, beatWave, energy, unifiedScale)) {
             canvas.restore()
             return
         }
@@ -881,6 +876,7 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
         frame: PoseFrame,
         beatWave: Float,
         energy: Float,
+        unifiedScale: Float,
     ): Boolean {
         // compute anchor early so begin/end sprites align consistently with regular sprite placement
         val anchorX = cx + fallbackRenderState.headOffsetXUnits * unit * 0.6f
@@ -943,32 +939,56 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
             floorShadowPaint
         )
 
-        // Compute transition progress and choose exactly one sprite to draw to avoid any
-        // simultaneous double-draws that produce deformation mismatch ghosting.
+        // 计算过渡进度。
+        // 1. 仅在过渡区间（0 < rawTransition < 1）内做alpha混合，且current+next alpha总和始终为1。
+        // 2. 过渡区间外（rawTransition<=0或>=1）只绘制单一帧，绝不出现两帧全alpha重叠。
         val hasDistinctNextSprite = nextSprite != null && nextSprite.bitmap !== currentSprite.bitmap
         val rawTransition = if (hasDistinctNextSprite) smoothStep(spriteFrameProgress) else 0f
         val allowed = (selection?.transitionRecommended == true)
 
-        val useNext = allowed && rawTransition >= 0.5f && nextSprite != null
-
-        if (useNext) {
-            drawDeformedSprite(
-                canvas = canvas,
-                sprite = nextSprite!!,
-                anchorX = anchorX,
-                anchorY = anchorY,
-                targetWidth = targetWidth,
-                targetHeight = targetHeight,
-                frame = frame,
-                beatWave = beatWave,
-                energy = energy,
-                alphaFraction = 1f,
-                outVerts = meshVertsAlt,
-            )
+        if (hasDistinctNextSprite && allowed && rawTransition > 0f && rawTransition < 1f) {
+            // 过渡期内，current/next alpha严格互补，mesh与离屏混合参数完全一致，避免重影
+            val currentAlpha = (1f - rawTransition).coerceIn(0f, 1f)
+            val nextAlpha = rawTransition.coerceIn(0f, 1f)
+            // 此处currentAlpha+nextAlpha恒为1，且两帧mesh参数一致，视觉无重叠
+            if (useMeshForSprites) {
+                drawBothWithSharedMesh(
+                    canvas = canvas,
+                    currentSprite = currentSprite,
+                    nextSprite = nextSprite,
+                    anchorX = anchorX,
+                    anchorY = anchorY,
+                    targetWidth = targetWidth,
+                    targetHeight = targetHeight,
+                    frame = frame,
+                    beatWave = beatWave,
+                    energy = energy,
+                    currentAlpha = currentAlpha,
+                    nextAlpha = nextAlpha,
+                )
+            } else {
+                drawBothToOffscreen(
+                    canvas = canvas,
+                    currentSprite = currentSprite,
+                    nextSprite = nextSprite,
+                    anchorX = anchorX,
+                    anchorY = anchorY,
+                    targetWidth = targetWidth,
+                    targetHeight = targetHeight,
+                    frame = frame,
+                    beatWave = beatWave,
+                    energy = energy,
+                    currentAlpha = currentAlpha,
+                    nextAlpha = nextAlpha,
+                    viewScale = unifiedScale,
+                )
+            }
         } else {
+            // 非过渡区间或不推荐过渡时，只绘制单一帧，绝无重叠
+            val drawSprite = if (allowed && rawTransition >= 1f && nextSprite != null) nextSprite else currentSprite
             drawDeformedSprite(
                 canvas = canvas,
-                sprite = currentSprite,
+                sprite = drawSprite,
                 anchorX = anchorX,
                 anchorY = anchorY,
                 targetWidth = targetWidth,
@@ -977,7 +997,7 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
                 beatWave = beatWave,
                 energy = energy,
                 alphaFraction = 1f,
-                outVerts = meshVerts,
+                outVerts = if (drawSprite === nextSprite) meshVertsAlt else meshVerts,
             )
         }
 
@@ -1151,19 +1171,26 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
         currentAlpha: Float,
         nextAlpha: Float,
     ) {
-        // compute both meshes
-        computeDeformedVerts(currentSprite, anchorX, anchorY, targetWidth, targetHeight, frame, beatWave, energy, currentAlpha, meshVerts)
-        computeDeformedVerts(nextSprite, anchorX, anchorY, targetWidth, targetHeight, frame, beatWave, energy, nextAlpha, meshVertsAlt)
+        // 为避免在过渡时出现重影/错位，必须保证 current 与 next 使用完全一致的顶点网格。
+        // 问题根源：之前分别使用 currentAlpha/nextAlpha 计算网格（computeDeformedVerts），
+        // 导致两帧对应的顶点位置不同，随后将它们按权重混合得到 midVerts 再去绘制，会产生微小位移，造成重影。
+        // 解决方案：采用统一的参考网格（使用 alphaFraction = 1f 计算），使两张图在顶点映射上一致，
+        // 然后只改变 bitmapPaint.alpha 来做透明度混合。这样可避免因为顶点差异导致的视觉重影。
 
-        val midVerts = FloatArray(meshVerts.size)
-        for (i in midVerts.indices) {
-            midVerts[i] = (meshVerts[i] + meshVertsAlt[i]) * 0.5f
+        // 计算统一 mesh（alphaFraction 固定为 1f，保证变形参数一致）
+        computeDeformedVerts(currentSprite, anchorX, anchorY, targetWidth, targetHeight, frame, beatWave, energy, 1f, meshVerts)
+        // 直接复用 meshVerts 到 midVerts，避免额外计算
+        if (midVerts.size == meshVerts.size) {
+            System.arraycopy(meshVerts, 0, midVerts, 0, midVerts.size)
+        } else {
+            for (i in meshVerts.indices) midVerts[i] = meshVerts[i]
         }
 
         val prevAlpha = bitmapPaint.alpha
-        bitmapPaint.alpha = (currentAlpha * 255f).toInt().coerceIn(0, 255)
+        // 先绘制 current，再绘制 next，两者共用 midVerts，仅通过 alpha 做混合，避免顶点不一致
+        bitmapPaint.alpha = (currentAlpha.coerceIn(0f, 1f) * 255f).toInt().coerceIn(0, 255)
         canvas.drawBitmapMesh(currentSprite.bitmap, meshWidth, meshHeight, midVerts, 0, null, 0, bitmapPaint)
-        bitmapPaint.alpha = (nextAlpha * 255f).toInt().coerceIn(0, 255)
+        bitmapPaint.alpha = (nextAlpha.coerceIn(0f, 1f) * 255f).toInt().coerceIn(0, 255)
         canvas.drawBitmapMesh(nextSprite.bitmap, meshWidth, meshHeight, midVerts, 0, null, 0, bitmapPaint)
         bitmapPaint.alpha = prevAlpha
     }
@@ -1189,30 +1216,51 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
         energy: Float,
         currentAlpha: Float,
         nextAlpha: Float,
+        viewScale: Float,
     ) {
-        // Simple crossfade: draw scaled bitmaps into an offscreen buffer using alpha blend
-        ensureTmpBitmap(width, height)
+
+        // 计算基于当前（已被可能 scale）画布坐标的目标矩形
+        val halfW = targetWidth * 0.5f
+        val halfH = targetHeight * 0.5f
+        val rectView = RectF(
+            anchorX - halfW,
+            anchorY - halfH,
+            anchorX + halfW,
+            anchorY + halfH,
+        )
+
+        val rectW = rectView.width().coerceAtLeast(1f)
+        val rectH = rectView.height().coerceAtLeast(1f)
+
+        // 临时位图尺寸使用目标矩形的像素大小，避免使用整个视图大小导致内存/性能问题
+        val tmpW = rectW.toInt().coerceAtLeast(1)
+        val tmpH = rectH.toInt().coerceAtLeast(1)
+        ensureTmpBitmap(tmpW, tmpH)
         val bc = tmpCanvas ?: return
+
+        // 清空 tmpCanvas（透明）
         tmpBitmap?.eraseColor(Color.TRANSPARENT)
 
         val prevAlpha = bitmapPaint.alpha
-        val rect = android.graphics.RectF(
-            anchorX - targetWidth * 0.5f,
-            anchorY - targetHeight * 0.5f,
-            anchorX + targetWidth * 0.5f,
-            anchorY + targetHeight * 0.5f,
-        )
 
+        // 在 tmpCanvas 的坐标系里，把两帧绘制为覆盖整个 tmpBitmap
+        val rectDst = RectF(0f, 0f, tmpW.toFloat(), tmpH.toFloat())
+
+        // 绘制 current
         bitmapPaint.alpha = (currentAlpha * 255f).toInt().coerceIn(0, 255)
-        bc.drawBitmap(currentSprite.bitmap, null, rect, bitmapPaint)
+        bc.save()
+        bc.setMatrix(null)
+        bc.drawBitmap(currentSprite.bitmap, null, rectDst, bitmapPaint)
 
+        // 绘制 next
         bitmapPaint.alpha = (nextAlpha * 255f).toInt().coerceIn(0, 255)
-        bc.drawBitmap(nextSprite.bitmap, null, rect, bitmapPaint)
+        bc.drawBitmap(nextSprite.bitmap, null, rectDst, bitmapPaint)
+        bc.restore()
 
         bitmapPaint.alpha = prevAlpha
 
-        // composite back to main canvas
-        canvas.drawBitmap(tmpBitmap!!, 0f, 0f, null)
+        // 把合成后的 tmpBitmap 绘制回主画布，目标矩形使用 rectView（主画布当前变换会被正确应用）
+        canvas.drawBitmap(tmpBitmap!!, null, rectView, null)
     }
 
     private fun drawLayeredSpriteCharacter(
@@ -1342,38 +1390,50 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
     }
 
     private fun loadLayeredSprites(): Map<String, LayerSprite> {
+        // Delegate asset discovery + preprocessing to AvatarLoader.
         val specs = mapOf(
-            "body" to Triple("avatar_body", 0.5f, 0.2f),
-            "head" to Triple("avatar_head", 0.5f, 0.8f),
-            "arm_left" to Triple("avatar_arm_left", 0.9f, 0.08f),
-            "arm_right" to Triple("avatar_arm_right", 0.1f, 0.08f),
-            "fan" to Triple("avatar_fan", 0.2f, 0.85f),
-            "skirt" to Triple("avatar_skirt", 0.5f, 0.1f),
-            "leg_left" to Triple("avatar_leg_left", 0.5f, 0.08f),
-            "leg_right" to Triple("avatar_leg_right", 0.5f, 0.08f),
+            "body" to Pair("avatar_body", Pair(0.5f, 0.2f)),
+            "head" to Pair("avatar_head", Pair(0.5f, 0.8f)),
+            "arm_left" to Pair("avatar_arm_left", Pair(0.9f, 0.08f)),
+            "arm_right" to Pair("avatar_arm_right", Pair(0.1f, 0.08f)),
+            "fan" to Pair("avatar_fan", Pair(0.2f, 0.85f)),
+            "skirt" to Pair("avatar_skirt", Pair(0.5f, 0.1f)),
+            "leg_left" to Pair("avatar_leg_left", Pair(0.5f, 0.08f)),
+            "leg_right" to Pair("avatar_leg_right", Pair(0.5f, 0.08f)),
         )
 
+        val keys = specs.values.map { it.first }.toList()
         val loaded = mutableMapOf<String, LayerSprite>()
-        for ((key, spec) in specs) {
-            val (name, pivotX, pivotY) = spec
-            // Try variant resource names first when user selected avatar1
-            val candidateNames = if (prefersAvatar1() && name.startsWith("avatar")) {
-                val alt = name.replaceFirst("avatar", "avatar1")
-                listOf(alt, name)
-            } else {
-                listOf(name)
-            }
 
-            var found: LayerSprite? = null
-            for (candidate in candidateNames) {
-                val resId = findDrawableResourceIdByName(candidate)
-                if (resId == 0) continue
-                val bitmap = BitmapFactory.decodeResource(resources, resId) ?: continue
-                found = LayerSprite(bitmap, pivotX, pivotY)
-                break
+        val loadedMap = AvatarLoader.loadLayeredSprites(
+            context = context,
+            keys = keys,
+            prefersVariant = prefersAvatar1(),
+            avatarDir = avatarDir(),
+            avatarVariantDir = avatarVariantDir(),
+        )
+
+        // Map loaded results into LayerSprite and preserve pivot info from specs when available
+        for ((key, spec) in specs) {
+            val name = spec.first
+            val piv = spec.second
+            loadedMap[name]?.let { ls ->
+                loaded[key] = LayerSprite(ls.bitmap, piv.first, piv.second)
             }
-            if (found != null) loaded[key] = found
         }
+
+        // Fallback to legacy drawable resources if nothing found for a part
+        for ((key, spec) in specs) {
+            if (loaded.containsKey(key)) continue
+            val (name, piv) = spec
+            val resId = findDrawableResourceIdByName(name)
+            if (resId != 0) {
+                BitmapFactory.decodeResource(resources, resId)?.let { bmp ->
+                    loaded[key] = LayerSprite(prepareAvatarBitmap(bmp), piv.first, piv.second)
+                }
+            }
+        }
+
         return loaded
     }
 
@@ -1383,15 +1443,20 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
     }
 
     private fun loadAvatarSpriteFrames(): List<LayerSprite> {
-        val assetFrames = (1..maxAvatarSpriteFrames)
-            .map(::singleSpriteAssetCandidates)
-            .mapNotNull(::loadSpriteFromCandidates)
-        if (assetFrames.isNotEmpty()) {
-            return assetFrames
+        val preferredDir = avatarDir()
+        val variantDir = avatarVariantDir()
+        val loaded = AvatarLoader.loadSingleSpriteFrames(
+            context = context,
+            preferredDir = if (prefersAvatar1()) variantDir else preferredDir,
+            otherDir = if (prefersAvatar1()) preferredDir else variantDir,
+            maxFrames = maxAvatarSpriteFrames,
+        )
+
+        if (loaded.isNotEmpty()) {
+            return loaded.map { LayerSprite(it.bitmap, it.pivotX, it.pivotY) }
         }
 
-        // Drawable-based loading (legacy). Keep this as a fallback in case the app packaged
-        // static drawable resources instead of assets.
+        // Fallback to drawable resources (legacy)
         val drawableFrames = (1..maxAvatarSpriteFrames).mapNotNull { index ->
             val resId = findDrawableResourceIdByName("dancer_single$index")
             if (resId != 0) {
@@ -1401,13 +1466,9 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
                     pivotXRatio = 0.5f,
                     pivotYRatio = 0.5f,
                 )
-            } else {
-                null
-            }
+            } else null
         }
-        if (drawableFrames.isNotEmpty()) {
-            return drawableFrames
-        }
+        if (drawableFrames.isNotEmpty()) return drawableFrames
 
         val legacy = loadLegacySingleAvatarSprite()?.let(::listOf).orEmpty()
         return legacy
@@ -1435,26 +1496,9 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
     private fun loadLegacySingleAvatarSprite(): LayerSprite? {
         val base = listOf(
             "dancer_single_begin",
-            "dancer_single_begin",
-            "dancer_single_begin",
-            "dancer_single_begin",
-            "dancer_single_begin",
-            "dancer_single_begin",
-            "dancer_single_begin",
-            "dancer_single_begin",
-            "reference",
-            "reference",
-            "reference",
-            "reference",
-            "reference",
-            "reference",
-            "reference",
             "reference",
             "avatar",
-            "avatar",
-            "avatar",
-            "avatar",
-            "erciyuan_dancer",
+            "avatar1",
         )
 
         val exts = listOf("png", "jpg", "jpeg", "webp")
@@ -1503,8 +1547,8 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
             setHasAlpha(true)
             setPremultiplied(true)
         }
-        val canvas = android.graphics.Canvas(result)
-        canvas.drawColor(android.graphics.Color.TRANSPARENT)
+        val canvas = Canvas(result)
+        canvas.drawColor(Color.TRANSPARENT)
         // 保持内容最大化且底部对齐，避免不同帧在垂直方向跳动造成重影
         val scale = minOf(targetWidth.toFloat() / cropped.width, targetHeight.toFloat() / cropped.height)
         val drawWidth = (cropped.width * scale).toInt()
@@ -2060,10 +2104,7 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
     }
 
     private fun resetPoseChoreography() {
-        val sequenceSize = poseSequence().size
-        currentPoseIndex = 0
-        nextPoseIndex = if (sequenceSize > 1) 1 else 0
-        poseProgress = 0f
+        // Pose choreography deprecated: no-op to preserve legacy calls
     }
 
     private fun resetSpriteChoreography() {
@@ -2088,86 +2129,18 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
         return frames[currentFrameIndex] to nextFrameIndex?.let(frames::get)
     }
 
-    private fun blendedFrame(): PoseFrame {
-        val sequence = poseSequence()
-        if (sequence.isEmpty()) {
-            return frameForPose(AvatarPose.POSE1)
-        }
-        val current = frameForPose(sequence[currentPoseIndex.coerceIn(0, sequence.lastIndex)])
-        val next = frameForPose(sequence[nextPoseIndex.coerceIn(0, sequence.lastIndex)])
-        return lerpFrame(current, next, smoothStep(poseProgress))
+    private fun scheduleMicroMotionOnce() {
+        if (!microMotionEnabled) return
+        microHeadTiltDeg += (Random.nextFloat() - 0.5f) * 4f // ±2°
+        microLeftArmOffset += (Random.nextFloat() - 0.5f) * 12f // ±6°
+        microRightArmOffset += (Random.nextFloat() - 0.5f) * 12f // ±6°
     }
 
-    private fun poseSequence(): List<AvatarPose> {
-        val section = currentSection()
-
-        return when {
-            songChangeBoost > 0.28f -> when (danceStyle) {
-                DanceStyle.CHILL -> listOf(AvatarPose.POSE2, AvatarPose.POSE6, AvatarPose.POSE7, AvatarPose.POSE3, AvatarPose.POSE1)
-                DanceStyle.GROOVE -> listOf(AvatarPose.POSE2, AvatarPose.POSE4, AvatarPose.POSE7, AvatarPose.POSE8, AvatarPose.POSE5, AvatarPose.POSE1)
-                DanceStyle.POWER -> listOf(AvatarPose.POSE4, AvatarPose.POSE7, AvatarPose.POSE8, AvatarPose.POSE5, AvatarPose.POSE7, AvatarPose.POSE2)
-            }
-
-            playbackState == PlaybackDanceState.PAUSED -> listOf(AvatarPose.POSE1, AvatarPose.POSE2, AvatarPose.POSE1, AvatarPose.POSE3, AvatarPose.POSE1)
-            playbackState == PlaybackDanceState.STOPPED -> listOf(AvatarPose.POSE1, AvatarPose.POSE1, AvatarPose.POSE2, AvatarPose.POSE1)
-
-            else -> when (danceStyle) {
-                DanceStyle.CHILL -> when (section) {
-                    DanceSection.VERSE -> listOf(AvatarPose.POSE1, AvatarPose.POSE2, AvatarPose.POSE6, AvatarPose.POSE3, AvatarPose.POSE1)
-                    DanceSection.PRE_CHORUS -> listOf(AvatarPose.POSE1, AvatarPose.POSE2, AvatarPose.POSE4, AvatarPose.POSE6, AvatarPose.POSE3, AvatarPose.POSE5, AvatarPose.POSE10)
-                    DanceSection.CHORUS -> listOf(AvatarPose.POSE2, AvatarPose.POSE6, AvatarPose.POSE7, AvatarPose.POSE9, AvatarPose.POSE3, AvatarPose.POSE8, AvatarPose.POSE5)
-                }
-
-                DanceStyle.GROOVE -> when (section) {
-                    DanceSection.VERSE -> listOf(AvatarPose.POSE1, AvatarPose.POSE2, AvatarPose.POSE4, AvatarPose.POSE3, AvatarPose.POSE1)
-                    DanceSection.PRE_CHORUS -> listOf(AvatarPose.POSE1, AvatarPose.POSE2, AvatarPose.POSE4, AvatarPose.POSE6, AvatarPose.POSE7, AvatarPose.POSE3, AvatarPose.POSE10)
-                    DanceSection.CHORUS -> listOf(AvatarPose.POSE2, AvatarPose.POSE4, AvatarPose.POSE7, AvatarPose.POSE9, AvatarPose.POSE8, AvatarPose.POSE5, AvatarPose.POSE3, AvatarPose.POSE2)
-                }
-
-                DanceStyle.POWER -> when (section) {
-                    DanceSection.VERSE -> listOf(AvatarPose.POSE2, AvatarPose.POSE4, AvatarPose.POSE3, AvatarPose.POSE2, AvatarPose.POSE5)
-                    DanceSection.PRE_CHORUS -> listOf(AvatarPose.POSE2, AvatarPose.POSE4, AvatarPose.POSE7, AvatarPose.POSE3, AvatarPose.POSE8, AvatarPose.POSE4, AvatarPose.POSE11)
-                    DanceSection.CHORUS -> listOf(AvatarPose.POSE4, AvatarPose.POSE7, AvatarPose.POSE9, AvatarPose.POSE8, AvatarPose.POSE5, AvatarPose.POSE7, AvatarPose.POSE3, AvatarPose.POSE12)
-                }
-            }
-        }
-    }
-
-    private fun frameForPose(pose: AvatarPose): PoseFrame {
-        return when (pose) {
-            AvatarPose.POSE1 -> PoseFrame(0f, -10f, 20f, 0f, 0f, 0f, 0f, 0f)
-            AvatarPose.POSE2 -> PoseFrame(5f, -40f, 60f, 30f, -8f, 0f, 0f, 0f)
-            AvatarPose.POSE3 -> PoseFrame(-5f, 10f, 40f, -20f, 8f, 0f, 0f, 0f)
-            AvatarPose.POSE4 -> PoseFrame(8f, -20f, 30f, 10f, 4f, 0f, -15f, 0f)
-            AvatarPose.POSE5 -> PoseFrame(-3f, -15f, 10f, -10f, -2f, -5f, 0f, -10f)
-            AvatarPose.POSE6 -> PoseFrame(4f, -56f, 14f, 24f, -6f, 4f, -8f, 6f)
-            AvatarPose.POSE7 -> PoseFrame(-8f, 18f, 72f, 38f, 10f, -4f, 6f, -16f)
-            AvatarPose.POSE8 -> PoseFrame(10f, -64f, 44f, 12f, -12f, 7f, -20f, 10f)
-            AvatarPose.POSE9 -> PoseFrame(2f, -22f, 38f, -12f, 6f, 2f, -6f, 4f)
-            AvatarPose.POSE10 -> PoseFrame(-6f, 30f, -10f, 20f, -6f, -3f, 8f, -4f)
-            AvatarPose.POSE11 -> PoseFrame(12f, -8f, 10f, -28f, 14f, 6f, -12f, 8f)
-            AvatarPose.POSE12 -> PoseFrame(-10f, 8f, 30f, 8f, -4f, -6f, 4f, -8f)
-        }
-    }
-
-    private fun lerpFrame(a: PoseFrame, b: PoseFrame, t: Float): PoseFrame {
-        return PoseFrame(
-            bodyAngle = lerp(a.bodyAngle, b.bodyAngle, t),
-            leftArmAngle = lerp(a.leftArmAngle, b.leftArmAngle, t),
-            rightArmAngle = lerp(a.rightArmAngle, b.rightArmAngle, t),
-            fanAngle = lerp(a.fanAngle, b.fanAngle, t),
-            skirtAngle = lerp(a.skirtAngle, b.skirtAngle, t),
-            headAngle = lerp(a.headAngle, b.headAngle, t),
-            leftLegLift = lerp(a.leftLegLift, b.leftLegLift, t),
-            rightLegLift = lerp(a.rightLegLift, b.rightLegLift, t),
-        )
-    }
-
-    private fun PoseFrame.withDynamics(timePhase: Float, energy: Float, style: DanceStyle): PoseFrame {
+    // 运行时动态 PoseFrame（基于节拍、能量与微动作）
+    private fun computeDynamicPose(timePhase: Float, energy: Float, style: DanceStyle): PoseFrame {
         val angle = timePhase * (2f * PI).toFloat()
         val amp = styleAmplitude(style) * playbackMotionScale() * sectionMotionMultiplier()
         val accent = 1f + beatBoost * 0.42f + songChangeBoost * 0.56f + (sectionPhraseAccent() - 1f) * 0.9f
-        // Compute deltas and clamp them to reasonable ranges to avoid sudden large jumps
         fun clamp(v: Float, minV: Float, maxV: Float) = v.coerceIn(minV, maxV)
 
         val bodyDelta = sin(angle * 1.15f + 0.12f) * (3.2f + energy * 3.8f) * amp * accent
@@ -2179,25 +2152,17 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
         val leftLegDelta = sin(angle * 1.85f + 0.34f) * (4.6f + beatBoost * 4.2f) * amp
         val rightLegDelta = -sin(angle * 1.85f + 0.34f) * (4.6f + beatBoost * 4.2f) * amp
 
-        return copy(
-            bodyAngle = bodyAngle + clamp(bodyDelta, -8f, 8f),
-            leftArmAngle = leftArmAngle + clamp(leftArmDelta, -20f, 20f),
-            rightArmAngle = rightArmAngle + clamp(rightArmDelta, -20f, 20f),
-            fanAngle = fanAngle + clamp(fanDelta, -10f, 10f),
-            skirtAngle = skirtAngle + clamp(skirtDelta, -8f, 8f),
-            headAngle = headAngle + clamp(headDelta, -6f, 6f),
-            leftLegLift = leftLegLift + clamp(leftLegDelta, -6f, 6f),
-            rightLegLift = rightLegLift + clamp(rightLegDelta, -6f, 6f),
+        // 基线为0的 PoseFrame（没有预置 pose），仅使用动态偏移
+        return PoseFrame(
+            bodyAngle = clamp(bodyDelta, -8f, 8f),
+            leftArmAngle = clamp(leftArmDelta, -20f, 20f),
+            rightArmAngle = clamp(rightArmDelta, -20f, 20f),
+            fanAngle = clamp(fanDelta, -10f, 10f),
+            skirtAngle = clamp(skirtDelta, -8f, 8f),
+            headAngle = clamp(headDelta, -6f, 6f),
+            leftLegLift = clamp(leftLegDelta, -6f, 6f),
+            rightLegLift = clamp(rightLegDelta, -6f, 6f),
         )
-    }
-
-    private fun scheduleMicroMotionOnce() {
-        if (!microMotionEnabled) return
-        // small random micro adjustments to make poses feel less repetitive
-        // Reduce micro-motion amplitudes to avoid large sudden jitter/ghosting
-        microHeadTiltDeg += (Random.nextFloat() - 0.5f) * 4f // ±2°
-        microLeftArmOffset += (Random.nextFloat() - 0.5f) * 12f // ±6°
-        microRightArmOffset += (Random.nextFloat() - 0.5f) * 12f // ±6°
     }
 
     // Overlay mapping removed.
@@ -2277,39 +2242,11 @@ class DancingAvatarView(context: Context) : View(context), BeatReactiveAvatar {
     }
 
     private var isDancing = false
-
-    private fun handleNoBeats() {
-        if (playbackState == PlaybackDanceState.PLAYING && recentBeatStrength <= 0) {
-            // Transition to idle state when no beats are detected
-            playbackState = PlaybackDanceState.IDLE
-            updateAvatarToIdleState()
-        }
+    // 调试开关：启用后会在画布左上角显示当前帧调试信息，便于重现/定位重影问题
+    private var debugOverlayEnabled = false
+    private val debugTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textSize = 12f * resources.displayMetrics.density
     }
 
-    private fun updateAvatarToIdleState() {
-        // Transition rendering to the idle/end sprite path used by this view.
-        // Prefer showing the end sprite if available; otherwise ensure we mark end-state so
-        // the drawing code will fallback to the regular frame rendering in an idle posture.
-        isAtEnd = true
-        isAtBegin = false
-        invalidate()
-    }
-
-    private fun onBeatDetected(beatStrength: Float) {
-        if (beatStrength > 0) {
-            // Existing logic for handling beats
-            playbackState = PlaybackDanceState.PLAYING
-            // We rely on the frame animation system elsewhere to update the visible frame.
-        } else {
-            handleNoBeatsDetected()
-        }
-    }
-
-    private fun handleNoBeatsDetected() {
-        // Set the playback state to idle when no beats are detected
-        playbackState = PlaybackDanceState.IDLE
-        // Update the avatar to show an idle image or animation: leave current image or
-        // trigger the end/idle rendering path used by this view
-        showEndSprite()
-    }
 }

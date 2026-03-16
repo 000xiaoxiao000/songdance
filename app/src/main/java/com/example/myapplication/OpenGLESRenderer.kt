@@ -61,6 +61,9 @@ class OpenGLESRenderer() : android.opengl.GLSurfaceView.Renderer {
     // 节拍触发脉冲，用于顶点动画（key -> pulse strength）
     private val pulseMap = mutableMapOf<String, Float>()
 
+    // 当前应当可见/渲染的纹理键（null 表示按现有 LRU 顺序全部渲染，非 null 表示只渲染该键）
+    private var activeKey: String? = null
+
     // 临时 buffers（复用以减少分配）
     private var tmpFloatBuffer: FloatBuffer? = null
 
@@ -101,9 +104,10 @@ class OpenGLESRenderer() : android.opengl.GLSurfaceView.Renderer {
         GLES20.glUseProgram(program)
         GLES20.glUniform1f(uAlphaLoc, alpha)
 
-        // 渲染所有已注册 mesh（按 LRU 顺序小到大，以保持稳定）
+        // 渲染：默认只渲染 activeKey（避免同时绘制多个上传的纹理导致重影/重叠）。
         val now = System.currentTimeMillis() / 1000f
-        for (key in textureLru) {
+        val keysToRender: List<String> = activeKey?.let { listOf(it) } ?: textureLru.toList()
+        for (key in keysToRender) {
             val mesh = meshes[key] ?: continue
             if (mesh.texId == 0 || mesh.vboPos == 0 || mesh.vboTex == 0 || mesh.ibo == 0) continue
             // 先根据当前脉冲和时间计算顶点位移并更新 VBO（如果存在 basePos）
@@ -188,6 +192,9 @@ class OpenGLESRenderer() : android.opengl.GLSurfaceView.Renderer {
 
         val mesh = meshes.getOrPut(key) { MeshData() }
         mesh.texId = texId
+
+        // 将此 key 标记为当前活动纹理，渲染线程将优先只绘制它，避免与先前上传的纹理重叠。
+        activeKey = key
 
         // LRU 管理
         textureLru.remove(key)
@@ -331,7 +338,7 @@ class OpenGLESRenderer() : android.opengl.GLSurfaceView.Renderer {
         // 将节拍强度记录到 pulseMap，用于在下一帧渲染时触发顶点脉冲动画
         val strength = event.strength.coerceIn(0f, 1f)
         // 使用 key "frame" 作为默认精灵键（overlay 上传时使用该 key）
-        val key = "frame"
+        val key = activeKey ?: "frame"
         val prev = pulseMap.getOrDefault(key, 0f)
         pulseMap[key] = maxOf(prev * 0.7f, strength)
     }

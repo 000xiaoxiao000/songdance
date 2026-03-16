@@ -7,7 +7,7 @@ import android.util.AttributeSet
 
 /**
  * 简单的 GLSurfaceView 封装，用于承载 OpenGL ES 渲染器。
- * 提供上传纹理、设置目标尺寸、透明度、节拍回调等基础 API（中文注释）。
+ * 提供上传纹理、设置目标尺寸、透明度、节拍回调等基础 API。
  */
 class OpenGLESView @JvmOverloads constructor(
     context: Context,
