@@ -73,14 +73,14 @@
 
 下面按顺序展示效果图：
 
-![效果图1](effect_picture/effect_picture1.jpg)
+<img src="effect_picture/effect_picture1.jpg" alt="效果图1" width="240" style="max-width:100%;height:auto;" />
 
-![效果图2](effect_picture/effect_picture2.jpg)
+<img src="effect_picture/effect_picture2.jpg" alt="效果图2" width="240" style="max-width:100%;height:auto;" />
 
-![效果图3](effect_picture/effect_picture3.jpg)
+<img src="effect_picture/effect_picture3.jpg" alt="效果图3" width="240" style="max-width:100%;height:auto;" />
 
-![效果图4](effect_picture/effect_picture4.jpg)
+<img src="effect_picture/effect_picture4.jpg" alt="效果图4" width="240" style="max-width:100%;height:auto;" />
 
-![付款码](Payment_Receipt_Code.png)
+<img src="Payment_Receipt_Code.png" alt="付款码" width="300" style="max-width:100%;height:auto;" />
 
 

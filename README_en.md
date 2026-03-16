@@ -73,14 +73,14 @@ If you'd like to support the project, scan the payment QR code below:
 
 The following are demonstration screenshots (in order):
 
-![Screenshot 1](effect_picture/effect_picture1.jpg)
+<img src="effect_picture/effect_picture1.jpg" alt="Screenshot 1" width="240" style="max-width:100%;height:auto;" />
 
-![Screenshot 2](effect_picture/effect_picture2.jpg)
+<img src="effect_picture/effect_picture2.jpg" alt="Screenshot 2" width="240" style="max-width:100%;height:auto;" />
 
-![Screenshot 3](effect_picture/effect_picture3.jpg)
+<img src="effect_picture/effect_picture3.jpg" alt="Screenshot 3" width="240" style="max-width:100%;height:auto;" />
 
-![Screenshot 4](effect_picture/effect_picture4.jpg)
+<img src="effect_picture/effect_picture4.jpg" alt="Screenshot 4" width="240" style="max-width:100%;height:auto;" />
 
-![Payment Receipt Code](Payment_Receipt_Code.png)
+<img src="Payment_Receipt_Code.png" alt="Payment Receipt Code" width="300" style="max-width:100%;height:auto;" />
 
 
