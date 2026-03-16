@@ -7,6 +7,19 @@ android {
     namespace = "com.example.myapplication"
     compileSdk = 36
 
+    // Development helper: if no explicit signing config is provided for release builds,
+    // fall back to the local debug keystore so the generated release APK is signed
+    // and can be installed on devices. For real releases, do NOT use this — create
+    // and reference a proper signing config with your production keystore.
+    signingConfigs {
+        create("autoDebug") {
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+            // default debug keystore location used by the Android tooling
+            storeFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
+            storePassword = "android"
+        }
+    }
     defaultConfig {
         applicationId = "com.example.myapplication"
         minSdk = 24
@@ -21,6 +34,10 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Use the autoDebug signing config so the output is not left unsigned.
+            // If you already configure signingConfigs elsewhere (CI, keystore.properties,
+            // etc.) this will simply refer to the debug fallback.
+            signingConfig = signingConfigs.getByName("autoDebug")
         }
     }
     compileOptions {
