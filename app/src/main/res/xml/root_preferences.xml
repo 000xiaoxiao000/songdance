@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <SeekBarPreference
+        app:key="pref_sensitivity"
+        app:title="@string/pref_sensitivity_title"
+        app:summary="@string/pref_sensitivity_summary"
+        app:min="60"
+        android:max="200"
+        app:defaultValue="100"
+        app:showSeekBarValue="true" />
+
+    <SeekBarPreference
+        app:key="pref_avatar_size"
+        app:title="@string/pref_avatar_size_title"
+        app:summary="@string/pref_avatar_size_summary"
+        app:min="70"
+        android:max="180"
+        app:defaultValue="100"
+        app:showSeekBarValue="true" />
+
+    <SeekBarPreference
+        app:key="pref_avatar_alpha"
+        app:title="@string/pref_avatar_alpha_title"
+        app:summary="@string/pref_avatar_alpha_summary"
+        app:min="35"
+        android:max="100"
+        app:defaultValue="92"
+        app:showSeekBarValue="true" />
+
+    <SwitchPreferenceCompat
+        app:key="pref_show_mode_text"
+        app:title="@string/pref_show_mode_text_title"
+        app:summary="@string/pref_show_mode_text_summary"
+        app:defaultValue="true" />
+
+    <SwitchPreferenceCompat
+        app:key="pref_lock_position"
+        app:title="@string/pref_lock_position_title"
+        app:summary="@string/pref_lock_position_summary"
+        app:defaultValue="false" />
+
+    <SwitchPreferenceCompat
+        app:key="pref_auto_start_boot"
+        app:title="@string/pref_auto_start_boot_title"
+        app:summary="@string/pref_auto_start_boot_summary"
+        app:defaultValue="false" />
+
+    <SeekBarPreference
+        app:key="pref_avatar_anchor_offset"
+        app:title="@string/pref_avatar_anchor_offset_title"
+        app:summary="@string/pref_avatar_anchor_offset_summary"
+        app:min="-50"
+        android:max="50"
+        app:defaultValue="0"
+        app:showSeekBarValue="true" />
+
+    <SeekBarPreference
+        app:key="pref_audio_threshold"
+        app:title="@string/pref_audio_threshold_title"
+        app:summary="@string/pref_audio_threshold_summary"
+        app:min="1"
+        android:max="100"
+        app:defaultValue="5"
+        app:showSeekBarValue="true" />
+
+    <SeekBarPreference
+        app:key="pref_audio_inactivity_timeout_ms"
+        app:title="@string/pref_audio_inactivity_timeout_title"
+        app:summary="@string/pref_audio_inactivity_timeout_summary"
+        app:min="500"
+        android:max="5000"
+        app:defaultValue="1500"
+        app:showSeekBarValue="true" />
+
+    <SwitchPreferenceCompat
+        app:key="pref_use_avatar1"
+        app:title="@string/pref_use_avatar1_title"
+        app:summary="@string/pref_use_avatar1_summary"
+        app:defaultValue="false" />
+
+
+
+
+
+</PreferenceScreen>
+
