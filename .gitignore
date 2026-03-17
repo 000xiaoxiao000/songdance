@@ -1,11 +1,12 @@
 *.iml
 .gradle
 /local.properties
+.idea
 **/.idea/**
 .idea/**
 *.ipr
 *.iws
-.idea/
+
 .idea/codeStyles/
 .idea/inspectionProfiles/
 .idea/$PROJECT_FILE$
