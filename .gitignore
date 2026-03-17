@@ -1,11 +1,9 @@
 *.iml
 .gradle
-/local.properties
 .idea
+/.idea/
 **/.idea/**
 .idea/**
-*.ipr
-*.iws
 .idea/codeStyles/
 .idea/inspectionProfiles/
 .idea/$PROJECT_FILE$
@@ -39,5 +37,8 @@
 .externalNativeBuild
 .cxx
 local.properties
+/local.properties
+*.ipr
+*.iws
 
 
