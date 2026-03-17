@@ -9,13 +9,10 @@ import android.view.Gravity
 import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.ImageView
-import android.graphics.BitmapFactory
 // 使用框架提供的 Bitmap.createBitmap / createScaledBitmap，避免对 KTX 扩展的依赖
 
-class DancerOverlayView(context: Context) : FrameLayout(context) {
-    // 只用图片型小人
-    private val avatarImageView = ImageView(context)
-    // OpenGL ES 视图，用于渲染上传的位图纹理（当启用 GL 分支时使用）
+class DancerOverlayView(context: Context) : FrameLayout(context), BeatReactiveAvatar {
+    // 移除 avatarImageView，统一使用 OpenGL ES 渲染
     private val openGlView = OpenGLESView(context)
     private val modeText = TextView(context)
     private val bpmText = TextView(context)
@@ -29,15 +26,13 @@ class DancerOverlayView(context: Context) : FrameLayout(context) {
     private var lastUseAvatar1: Boolean? = null
     private var lastAvatarDir: String? = null
     private var lastAvatarVariantDir: String? = null
-    // 图片帧资源id数组或asset路径数组
-    private var avatarFrameAssets: List<String> = emptyList()
+    // 图片帧序列（统一由 AvatarLoader 加载）
+    private var avatarFrames: List<AvatarLoader.LoadedSprite> = emptyList()
     private var currentFrameIndex = 0
-    // begin/end special assets (optional)
-    private var beginAssetPath: String? = null
-    private var endAssetPath: String? = null
+    // begin/end 特殊帧
     private var beginBitmap: android.graphics.Bitmap? = null
     private var endBitmap: android.graphics.Bitmap? = null
-    // 用于在没有明显节拍事件时也能让悬浮小人按一定速率切换帧，模拟跳舞
+    // 用于在没有明显节拍事件时也能让悬浮小人按一定速率切帧，模拟跳舞
     private val frameHandler = Handler(Looper.getMainLooper())
     private var frameTickerRunning = false
     // 默认帧间隔（毫秒），会根据节拍事件调整
@@ -47,8 +42,8 @@ class DancerOverlayView(context: Context) : FrameLayout(context) {
             // 跳舞前清理 begin/end 图
             clearBeginEndState()
             // 仅当处于播放态且检测到节拍（latestBpm>0）时才循环自动切帧
-            if (currentPlaybackState == PlaybackDanceState.PLAYING && avatarFrameAssets.isNotEmpty() && latestBpm > 0f) {
-                currentFrameIndex = (currentFrameIndex + 1) % avatarFrameAssets.size
+            if (currentPlaybackState == PlaybackDanceState.PLAYING && avatarFrames.isNotEmpty() && latestBpm > 0f) {
+                currentFrameIndex = (currentFrameIndex + 1) % avatarFrames.size
                 loadAvatarFrame(currentFrameIndex)
                 frameHandler.postDelayed(this, frameIntervalMs)
             } else {
@@ -72,9 +67,8 @@ class DancerOverlayView(context: Context) : FrameLayout(context) {
     }
     // 可重用位图池，用于在解码/缩放后重复利用内存（可选）
     private val reusableBitmaps = ArrayDeque<android.graphics.Bitmap>(4)
-    // 是否使用 GL 渲染分支（默认关闭，优先使用 ImageView 回退以保证兼容性）
-    private var useGl = false
-    // 无淡入淡出：直接切换渲染视图，确保在显示前隐藏另一者以避免重叠
+    // 是否使用 GL 渲染分支（由于已移除 ImageView，此处硬编码为 true 并将在后续重构中彻底移除该标志）
+    private var useGl = true
     // 当前用户设置的缩放比例（由 applySettings 更新），用于计算目标像素尺寸
     private var currentScale = 1.0f
     // 标志：当前是否显示 begin 或 end 图
@@ -105,19 +99,7 @@ class DancerOverlayView(context: Context) : FrameLayout(context) {
             )
         }
 
-        avatarImageView.apply {
-            // 使用 CENTER_INSIDE，确保图片等比缩放到 ImageView 区域内，不拉伸、不压缩，仅按比例缩放，居中显示
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
-            setBackgroundColor(Color.TRANSPARENT)
-            visibility = VISIBLE
-        }
-        // 将 ImageView 与 GL 视图叠放，GL 在上层（可见时覆盖 ImageView）
-        addView(
-            avatarImageView,
-            LayoutParams(dpToPx(baseSizeDp), dpToPx(baseSizeDp)).apply {
-                gravity = Gravity.CENTER
-            }
-        )
+        // 仅添加 openGlView
         addView(
             openGlView,
             LayoutParams(dpToPx(baseSizeDp), dpToPx(baseSizeDp)).apply {
@@ -143,57 +125,31 @@ class DancerOverlayView(context: Context) : FrameLayout(context) {
         isClickable = true
         isFocusable = true
 
-        // Modify click handler to show the begin sprite when appropriate.
-        // We avoid referencing missing drawable resources and prefer the asset-based beginBitmap
+        // 点击时仅走统一 begin 流程
         val clickHandler = OnClickListener {
             if (currentPlaybackState == PlaybackDanceState.PLAYING && latestBpm > 0f) {
-                // If we already decoded a begin bitmap from assets, use it; otherwise fall back to the
-                // normal showBeginSprite() which handles asset fallback and timing.
-                if (beginBitmap != null) {
-                    // Display the prepared begin bitmap immediately (scaled) and schedule restore
-                    val out = prepareOverlayBitmapForDisplay(beginBitmap!!)
-                    avatarImageView.setImageBitmap(out)
-                    avatarImageView.visibility = VISIBLE
-                    openGlView.visibility = GONE
-                    // Mark that we're showing a special sprite so other logic won't immediately override
-                    isShowingBeginOrEnd = true
-                    // Schedule restore using the existing logic
-                    showBeginSprite()
-                } else {
-                    // showBeginSprite will attempt to use assets and handle timing
-                    showBeginSprite()
-                }
+                showBeginSprite()
             }
-            // No operation for non-playing states
         }
         setOnClickListener(clickHandler)
 
-        // Ensure child views trigger the same click logic
-        avatarImageView.setOnClickListener { performClick() }
+        // 仅为 openGlView 设置点击监听
         openGlView.setOnClickListener { performClick() }
     }
 
     fun applySettings(settings: OverlaySettings) {
-        avatarImageView.alpha = settings.avatarAlpha
         openGlView.setAlphaValue(settings.avatarAlpha)
-        // When GL rendering is enabled we must not leave the ImageView visible
-        // because it would draw the same frame underneath/over the GL view and
-        // produce overlapping/ghosting. Only one rendering surface should be
-        // visible at a time.
-        avatarImageView.visibility = if (useGl) GONE else VISIBLE
-        openGlView.visibility = if (useGl) VISIBLE else GONE
+        // 强制显示 openGlView
+        openGlView.visibility = VISIBLE
+
         // 更新当前缩放比例并调整视图尺寸
         currentScale = settings.avatarScale
         val size = dpToPx(baseSizeDp * currentScale)
-        avatarImageView.layoutParams = (avatarImageView.layoutParams as? LayoutParams)?.apply {
-            width = size
-            height = size
-        }
+        
         openGlView.layoutParams = (openGlView.layoutParams as? LayoutParams)?.apply {
             width = size
             height = size
         }
-        avatarImageView.requestLayout()
         openGlView.requestLayout()
 
         var needReload = false
@@ -213,77 +169,22 @@ class DancerOverlayView(context: Context) : FrameLayout(context) {
             lastAvatarVariantDir = settings.avatarVariantDir
             needReload = true
         }
-        if (needReload || avatarFrameAssets.isEmpty()) {
-            // 仅使用用户所选的 avatar 目录（avatar 或 avatar1），不将两个目录的帧混合显示
+        if (needReload || avatarFrames.isEmpty()) {
+            // 仅使用用户所选目录作为首选，再回退到另一个目录；资源解析统一走 AvatarLoader
             val preferredDir = if (settings.useAvatarVariant1) settings.avatarVariantDir else settings.avatarDir
             val otherDir = if (preferredDir == settings.avatarDir) settings.avatarVariantDir else settings.avatarDir
 
-            fun listFromDir(d: String?): List<String> {
-                if (d == null) return emptyList()
-                return try {
-                    context.assets.list(d)
-                        ?.filter { it.startsWith("dancer_single") && it.endsWith(".png") }
-                        ?.sortedBy { it.substringAfter("dancer_single").substringBefore(".png").toIntOrNull() ?: Int.MAX_VALUE }
-                        ?.map { "$d/$it" } ?: emptyList()
-                } catch (_: Exception) { emptyList() }
-            }
-
-            val chosenList: List<String> = try {
-                val preferredList = listFromDir(preferredDir)
-                preferredList.ifEmpty {
-                    val otherList = listFromDir(otherDir)
-                    otherList.ifEmpty {
-                        try {
-                            context.assets.list("")?.filter { it.startsWith("dancer_single") && it.endsWith(".png") }
-                                ?.sortedBy {
-                                    it.substringAfter("dancer_single").substringBefore(".png").toIntOrNull() ?: Int.MAX_VALUE
-                                }
-                                ?: emptyList()
-                        } catch (_: Exception) {
-                            emptyList<String>()
-                        }
-                    }
-                }
-            } catch (_: Exception) {
-                emptyList()
-            }
-
-            // 过滤掉 begin/end 精灵帧，不参与动画
-            avatarFrameAssets = chosenList.distinct().filterNot {
-                it.endsWith("dancer_single_begin.png") || it.endsWith("dancer_single_end.png")
-            }
-
-            // 仅在首选目录查找 begin/end 精灵，若首选目录没有再尝试根目录（避免混合 avatar 与 avatar1）
-            fun resolveSpecial(name: String): String? {
-                val candidates = buildList {
-                    val preferred = if (settings.useAvatarVariant1) settings.avatarVariantDir else settings.avatarDir
-                    if (preferred.isNotEmpty()) add("$preferred/$name")
-                    add(name)
-                }
-                for (p in candidates) {
-                    if (p.isEmpty()) continue
-                    val exists = kotlin.runCatching {
-                        context.assets.open(p).close()
-                        true
-                    }.getOrDefault(false)
-                    if (exists) return p
-                }
-                return null
-            }
-
-            beginAssetPath = resolveSpecial("dancer_single_begin.png")
-            endAssetPath = resolveSpecial("dancer_single_end.png")
-
-            val decodeOpts = BitmapFactory.Options().apply {
-                inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
-                inMutable = true
-            }
-            beginBitmap = beginAssetPath?.let { path ->
-                kotlin.runCatching { context.assets.open(path).use { BitmapFactory.decodeStream(it, null, decodeOpts) } }.getOrNull()?.let { ensureArgb(it) }
-            }
-            endBitmap = endAssetPath?.let { path ->
-                kotlin.runCatching { context.assets.open(path).use { BitmapFactory.decodeStream(it, null, decodeOpts) } }.getOrNull()?.let { ensureArgb(it) }
-            }
+            val spriteSet = AvatarLoader.loadSingleSpriteSet(
+                context = context,
+                preferredDir = preferredDir,
+                otherDir = otherDir,
+                maxFrames = 80,
+            )
+            avatarFrames = spriteSet.frames
+            beginBitmap = spriteSet.begin?.bitmap
+            endBitmap = spriteSet.end?.bitmap
+            // 目录切换后清理缓存，避免沿用旧目录帧导致误判为重影
+            avatarBitmapCache.evictAll()
             currentFrameIndex = 0
             loadAvatarFrame(currentFrameIndex)
         } else {
@@ -295,18 +196,18 @@ class DancerOverlayView(context: Context) : FrameLayout(context) {
         modeText.text = context.getString(R.string.overlay_mode_template, value)
     }
 
-    fun setAudioLevel(value: Float) {
+    override fun setAudioLevel(level: Float) {
         // 更新本地缓存（保留范围 0..1），未来可用于基于音频调整渲染
-        overlayAudioLevel = value.coerceIn(0f, 1f)
+        overlayAudioLevel = level.coerceIn(0f, 1f)
     }
 
-    fun setDanceStyle(style: DanceStyle) {
+    override fun setDanceStyle(style: DanceStyle) {
         if (style == currentDanceStyle) return
         currentDanceStyle = style
         updateBpmText()
     }
 
-    fun setPlaybackState(state: PlaybackDanceState) {
+    override fun setPlaybackState(state: PlaybackDanceState) {
         if (currentPlaybackState == state) return
         currentPlaybackState = state
         updateBpmText()
@@ -314,9 +215,7 @@ class DancerOverlayView(context: Context) : FrameLayout(context) {
         when (state) {
             PlaybackDanceState.PLAYING -> {
                 openGlView.setRenderModeContinuous()
-                // 如果当前正在展示 begin/end（例如服务刚刚启动显示 begin），不要立即覆盖显示。
-                // 只有当没有 begin/end 展示时才恢复/启动帧动画或显示当前帧。
-                // 如果 begin 仍处于保护期，也不要覆盖
+                // 如果当前正在展示 begin/end，不要立即覆盖显示。
                 val now = System.currentTimeMillis()
                 if (!isShowingBeginOrEnd && now > beginActiveUntilMs) {
                     loadAvatarFrame(currentFrameIndex)
@@ -328,80 +227,59 @@ class DancerOverlayView(context: Context) : FrameLayout(context) {
                         stopFrameTicker()
                     }
                 } else {
-                    // 保持 begin/end 状态直到其自动恢复或节拍事件触发 clearBeginEndState()
                     stopFrameTicker()
                 }
             }
             PlaybackDanceState.PAUSED, PlaybackDanceState.STOPPED, PlaybackDanceState.IDLE -> {
                 openGlView.setRenderModeDirty()
-                // Respect begin protection window: if begin sprite is still intended to show, skip immediate end
                 val now2 = System.currentTimeMillis()
-                if (now2 > beginActiveUntilMs) showEndSprite() else {
-                    // 保持当前 begin/end 可见性（不覆盖）
-                }
+                if (now2 > beginActiveUntilMs) showEndSprite()
                 stopFrameTicker()
             }
         }
     }
 
+    // 简化渲染逻辑，仅支持 OpenGL
+    private fun renderBitmapOnActiveSurface(bitmap: android.graphics.Bitmap, tag: String) {
+        openGlView.uploadBitmapWithMesh(tag, bitmap, 20, 20)
+        openGlView.visibility = VISIBLE
+    }
+
+    /**
+     * 加载特定索引的跳舞帧并渲染
+     */
     private fun loadAvatarFrame(index: Int) {
-        // 切换帧时立即切换显示目标渲染视图（ImageView 或 GL），避免动画重叠
-            if (avatarFrameAssets.isEmpty()) {
-            avatarImageView.setImageDrawable(null)
-            avatarImageView.setBackgroundColor(Color.TRANSPARENT)
+        if (avatarFrames.isEmpty()) {
+            openGlView.visibility = GONE
             return
         }
-        val assetPath = avatarFrameAssets[index % avatarFrameAssets.size]
+        val frame = avatarFrames[index % avatarFrames.size]
         try {
-            // 优先从缓存获取已经缩放好的目标尺寸位图，使用当前缩放比例保证尺寸一致
-            val targetPx = (baseSizeDp * currentScale * resources.displayMetrics.density).toInt()
-            val cacheKey = "$assetPath@$targetPx"
+            val density = resources.displayMetrics.density
+            val targetPx = (baseSizeDp * currentScale * density).toInt()
+            val src = frame.bitmap
+            val cacheKey = "__frame__${index % avatarFrames.size}@${targetPx}x${targetPx}_${src.width}x${src.height}"
             val cached = avatarBitmapCache.get(cacheKey)
             if (cached != null) {
-                if (useGl) {
-                    // 立即在 GL 分支显示，隐藏 ImageView
-                    openGlView.uploadBitmapWithMesh("frame", cached, 20, 20)
-                    openGlView.visibility = VISIBLE
-                    avatarImageView.visibility = GONE
-                } else {
-                    // 立即在 ImageView 显示，隐藏 GL 视图
-                    avatarImageView.setImageBitmap(cached)
-                    avatarImageView.visibility = VISIBLE
-                    openGlView.visibility = GONE
-                }
+                renderBitmapOnActiveSurface(cached, "frame")
             } else {
-                context.assets.open(assetPath).use { input ->
-                    val opts = BitmapFactory.Options().apply { inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888; inMutable = true }
-                    val src = BitmapFactory.decodeStream(input, null, opts)
-                        ?: throw Exception("Failed to decode asset: $assetPath")
-                    val padded = padBitmapToSquare(ensureArgb(src))
-                    val reusable = getReusableBitmap(targetPx, targetPx)
-                    val finalBitmap: android.graphics.Bitmap = if (reusable != null) {
-                        val canvas = android.graphics.Canvas(reusable)
-                        canvas.drawARGB(0, 0, 0, 0)
-                        val srcRect = android.graphics.Rect(0, 0, padded.width, padded.height)
-                        val dstRect = android.graphics.Rect(0, 0, targetPx, targetPx)
-                        canvas.drawBitmap(padded, srcRect, dstRect, null)
-                        reusable
-                    } else {
-                        android.graphics.Bitmap.createScaledBitmap(padded, targetPx, targetPx, true)
-                    }
-                    avatarBitmapCache.put(cacheKey, finalBitmap)
-                    if (useGl) {
-                        openGlView.uploadBitmapWithMesh("frame", finalBitmap, 20, 20)
-                        openGlView.visibility = VISIBLE
-                        avatarImageView.visibility = GONE
-                    } else {
-                        avatarImageView.setImageBitmap(finalBitmap)
-                        avatarImageView.visibility = VISIBLE
-                        openGlView.visibility = GONE
-                    }
+                val padded = padBitmapToSquare(ensureArgb(src))
+                val reusable = getReusableBitmap(targetPx, targetPx)
+                val finalBitmap: android.graphics.Bitmap = if (reusable != null) {
+                    val canvas = android.graphics.Canvas(reusable)
+                    canvas.drawColor(android.graphics.Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
+                    val srcRect = android.graphics.Rect(0, 0, padded.width, padded.height)
+                    val dstRect = android.graphics.Rect(0, 0, targetPx, targetPx)
+                    canvas.drawBitmap(padded, srcRect, dstRect, null)
+                    reusable
+                } else {
+                    android.graphics.Bitmap.createScaledBitmap(padded, targetPx, targetPx, true)
                 }
+                avatarBitmapCache.put(cacheKey, finalBitmap)
+                renderBitmapOnActiveSurface(finalBitmap, "frame")
             }
         } catch (e: Exception) {
-            avatarImageView.setImageDrawable(null)
-            avatarImageView.setBackgroundColor(Color.TRANSPARENT)
-            android.util.Log.e("DancerOverlayView", "加载图片失败: $assetPath", e)
+            android.util.Log.e("DancerOverlayView", "加载图片失败: frameIndex=$index", e)
         }
     }
 
@@ -429,23 +307,19 @@ class DancerOverlayView(context: Context) : FrameLayout(context) {
         return output
     }
 
-    fun onBeat(event: BeatEvent) {
+    override fun onBeat(event: BeatEvent) {
         latestBpm = event.bpm
         updateBpmText()
-        // Only clear begin/end state if begin protection window expired; otherwise let begin finish
         if (System.currentTimeMillis() > beginActiveUntilMs) {
             clearBeginEndState()
         }
-        // 只有在有节拍时才切帧
-        if (avatarFrameAssets.isNotEmpty() && latestBpm > 0f) {
+        if (avatarFrames.isNotEmpty() && latestBpm > 0f) {
             frameHandler.removeCallbacks(frameTickerRunnable)
             frameTickerRunning = false
 
-            currentFrameIndex = (currentFrameIndex + 1) % avatarFrameAssets.size
+            currentFrameIndex = (currentFrameIndex + 1) % avatarFrames.size
             loadAvatarFrame(currentFrameIndex)
-            if (useGl) {
-                openGlView.onBeat(event)
-            }
+            openGlView.onBeat(event)
         }
         // 收到节拍时根据 bpm 调整自动帧切换间隔（如果 bpm 可用）并确保定时器运行
         if (event.bpm > 0f) {
@@ -471,20 +345,11 @@ class DancerOverlayView(context: Context) : FrameLayout(context) {
         isShowingBeginOrEnd = true
         stopFrameTicker()
         beginBitmap?.let { bmp ->
-            if (useGl) {
-                val out = prepareOverlayBitmapForDisplay(bmp)
-                openGlView.uploadBitmapWithMesh("begin", out, 20, 20)
-                openGlView.visibility = VISIBLE
-                avatarImageView.visibility = GONE
-            } else {
-                val out = prepareOverlayBitmapForDisplay(bmp)
-                avatarImageView.setImageBitmap(out)
-                avatarImageView.visibility = VISIBLE
-                openGlView.visibility = GONE
-            }
+            val out = prepareOverlayBitmapForDisplay(bmp)
+            renderBitmapOnActiveSurface(out, "begin")
         } ?: run {
             // 若没有专门的 begin 精灵，回退到首帧（并确保可见）
-            if (avatarFrameAssets.isNotEmpty()) {
+            if (avatarFrames.isNotEmpty()) {
                 currentFrameIndex = 0
                 loadAvatarFrame(currentFrameIndex)
             }
@@ -524,17 +389,8 @@ class DancerOverlayView(context: Context) : FrameLayout(context) {
         isShowingBeginOrEnd = true
         stopFrameTicker()
         endBitmap?.let { bmp ->
-            if (useGl) {
-                val out = prepareOverlayBitmapForDisplay(bmp)
-                openGlView.uploadBitmapWithMesh("end", out, 20, 20)
-                openGlView.visibility = VISIBLE
-                avatarImageView.visibility = GONE
-            } else {
-                val out = prepareOverlayBitmapForDisplay(bmp)
-                avatarImageView.setImageBitmap(out)
-                avatarImageView.visibility = VISIBLE
-                openGlView.visibility = GONE
-            }
+            val out = prepareOverlayBitmapForDisplay(bmp)
+            renderBitmapOnActiveSurface(out, "end")
         } ?: run {
             // Fallback: if no explicit end asset, show first frame
             loadAvatarFrame(currentFrameIndex)
@@ -648,5 +504,21 @@ class DancerOverlayView(context: Context) : FrameLayout(context) {
             // Reuse the existing begin-display logic which prefers asset bitmaps and timing
             showBeginSprite()
         }
+    }
+
+    override fun onSongChanged() {
+        // 切歌时重置到首帧并短暂展示 begin，保证 OpenGL 链路下状态可预期。
+        currentFrameIndex = 0
+        if (currentPlaybackState == PlaybackDanceState.PLAYING) {
+            showBeginSprite(900L)
+        } else {
+            showEndSprite()
+        }
+    }
+
+    fun reloadAvatarVariant() {
+        // 统一走当前配置重载，避免多入口导致的资源状态不一致。
+        val settings = OverlaySettingsRepository(context).get()
+        applySettings(settings)
     }
 }

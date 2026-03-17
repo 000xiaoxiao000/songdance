@@ -5,13 +5,12 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.RectF
 
 /**
  * AvatarLoader
  *
  * 推荐将与 avatar 图片相关的加载/预处理逻辑集中在这里：
- * - 支持 assets/{avatar,avatar1} 两个目录优先级切换
+ * - 支持 drawable/{avatar,avatar1} 两个目录优先级切换
  * - 提供按序号加载的单帧序列（dancer_singleN.*）
  * - 提供按名称加载的分层部件（avatar_body/avatar_head 等）
  * - 预处理：可选的自动去背景、裁剪透明像素、统一输出尺寸（缓存结果以避免重复开销）
@@ -26,6 +25,12 @@ object AvatarLoader {
         val bitmap: Bitmap,
         val pivotX: Float = 0.5f,
         val pivotY: Float = 0.5f,
+    )
+
+    data class SingleSpriteSet(
+        val frames: List<LoadedSprite>,
+        val begin: LoadedSprite?,
+        val end: LoadedSprite?,
     )
 
     private val preferredExtensions = listOf("png", "webp", "jpg", "jpeg")
@@ -60,6 +65,52 @@ object AvatarLoader {
         }
 
         return result
+    }
+
+    fun loadSingleSpriteSet(
+        context: Context,
+        preferredDir: String,
+        otherDir: String,
+        maxFrames: Int = 18,
+    ): SingleSpriteSet {
+        val frames = loadSingleSpriteFrames(
+            context = context,
+            preferredDir = preferredDir,
+            otherDir = otherDir,
+            maxFrames = maxFrames,
+        )
+        val begin = loadNamedSingleSprite(
+            context = context,
+            preferredDir = preferredDir,
+            otherDir = otherDir,
+            baseName = "dancer_single_begin",
+        )
+        val end = loadNamedSingleSprite(
+            context = context,
+            preferredDir = preferredDir,
+            otherDir = otherDir,
+            baseName = "dancer_single_end",
+        )
+        return SingleSpriteSet(frames = frames, begin = begin, end = end)
+    }
+
+    fun loadNamedSingleSprite(
+        context: Context,
+        preferredDir: String,
+        otherDir: String,
+        baseName: String,
+    ): LoadedSprite? {
+        val assets = context.assets
+        val candidates = buildList {
+            for (ext in preferredExtensions) add("$preferredDir/$baseName.$ext")
+            for (ext in preferredExtensions) add("$otherDir/$baseName.$ext")
+            for (ext in preferredExtensions) add("$baseName.$ext")
+        }
+        for (path in candidates) {
+            val bmp = tryLoadFromAssets(assets, path) ?: continue
+            return LoadedSprite(bmp, 0.5f, 0.5f)
+        }
+        return null
     }
 
     /**
@@ -120,7 +171,7 @@ object AvatarLoader {
                     inMutable = true
                 })?.let { prepareAvatarBitmap(it) }
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }

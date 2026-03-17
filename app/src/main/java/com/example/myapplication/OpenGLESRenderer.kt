@@ -98,15 +98,20 @@ class OpenGLESRenderer() : android.opengl.GLSurfaceView.Renderer {
         GLES20.glViewport(0, 0, width, height)
     }
 
+    // 渲染：强制只渲染 activeKey（若存在），避免同时绘制多个上传的纹理导致重影/重叠。
     override fun onDrawFrame(gl: javax.microedition.khronos.opengles.GL10?) {
+        // 每一帧都清除颜色缓冲，确保上一帧的内容不会残留
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
 
         GLES20.glUseProgram(program)
         GLES20.glUniform1f(uAlphaLoc, alpha)
 
-        // 渲染：默认只渲染 activeKey（避免同时绘制多个上传的纹理导致重影/重叠）。
         val now = System.currentTimeMillis() / 1000f
-        val keysToRender: List<String> = activeKey?.let { listOf(it) } ?: textureLru.toList()
+        // 修复重叠问题：严格只渲染 activeKey。如果没有 activeKey，则不渲染任何内容，或者回退到 LRU 最后一帧（通常就是当前帧）
+        // 之前的逻辑是 activeKey?.let { listOf(it) } ?: textureLru.toList()，如果 activeKey 为空会遍历渲染所有缓存，可能导致重叠
+        val currentKey = activeKey ?: textureLru.firstOrNull()
+        val keysToRender: List<String> = currentKey?.let { listOf(it) } ?: emptyList()
+        
         for (key in keysToRender) {
             val mesh = meshes[key] ?: continue
             if (mesh.texId == 0 || mesh.vboPos == 0 || mesh.vboTex == 0 || mesh.ibo == 0) continue

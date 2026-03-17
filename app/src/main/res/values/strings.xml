@@ -48,6 +48,6 @@
     <string name="pref_audio_threshold_summary">较低的阈值更容易被声音触发舞动</string>
     <string name="pref_audio_inactivity_timeout_title">音频不活跃超时（毫秒）</string>
     <string name="pref_audio_inactivity_timeout_summary">在此毫秒数内没有音频活动则视为静默</string>
-    <string name="pref_use_avatar1_title">使用 Avatar1（性感）</string>
-    <string name="pref_use_avatar1_summary">开启后展示 Avatar1 的形象；关闭展示默认可爱 Avatar</string>
+    <string name="pref_use_avatar1_title">切换 悬浮小人 </string>
+    <string name="pref_use_avatar1_summary">开启后会切换悬浮小人；关闭展示默认可爱的悬浮小人</string>
 </resources>
