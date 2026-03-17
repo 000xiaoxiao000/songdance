@@ -5,6 +5,22 @@
 .idea/**
 *.ipr
 *.iws
+.idea/
+.idea/codeStyles/
+.idea/inspectionProfiles/
+.idea/$PROJECT_FILE$
+.idea/.gitignore
+.idea/.name
+.idea/AndroidProjectSystem.xml
+.idea/copilot.data.migration.ask2agent.xml
+.idea/deploymentTargetSelector.xml
+.idea/deviceManager.xml
+.idea/gradle.xml
+.idea/material_theme_project_new.xml
+.idea/misc.xml
+.idea/qaplug_profiles.xml
+.idea/runConfigurations.xml
+.idea/vcs.xml
 .idea/modules.xml
 .idea/jarRepositories.xml
 .idea/compiler.xml
@@ -23,4 +39,5 @@
 .externalNativeBuild
 .cxx
 local.properties
+
 
