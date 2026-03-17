@@ -41,17 +41,15 @@ An Android application that shows a draggable floating dancing avatar on top of 
 ## How to build & run
 
 1. (Optional) If you want to use the runtime OpenGL ES renderer, place model/texture assets into `app/src/main/assets/`.
-2. Recommended: Put the PNG fallback frames into `app/src/main/res/drawable-nodpi/` with names like `dancer_single1.png` ... so packaged drawables are preferred at runtime.
+2. Place the floating-avatar PNG resources directly in:
 
-   - If your frames are currently in `app/src/main/assets/`, the app will fall back to loading from assets when packaged drawables are missing. Packaging frames under `res/drawable(-nodpi)/` is recommended for easier packaging and consistent runtime behavior.
+   - `app/src/main/res/drawable/avatar/`
+   - `app/src/main/res/drawable/avatar1/`
 
-   Example to copy from assets to drawable-nodpi:
+   Use `dancer_single_begin.png` as the startup sprite, `dancer_single_end.png` as the idle/ending sprite, and `dancer_single1.png`, `dancer_single2.png` ... as the dance frame sequence.
 
-   ```bash
-   mkdir -p app/src/main/res/drawable-nodpi
-   cp app/src/main/assets/avatar/dancer_single{1..18}.png app/src/main/res/drawable-nodpi/  # adjust range as needed
-   ./gradlew :app:processDebugResources
-   ```
+   > Note: the old `app/src/main/assets/avatar*` directories are no longer used as the source of avatar images.
+   > The current build exposes `res/drawable/avatar*` as path-readable raw files for runtime loading.
 
 3. Build and install via Android Studio or with the Gradle wrapper.
 4. Open the app and grant the required permissions:

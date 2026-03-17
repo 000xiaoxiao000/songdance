@@ -43,6 +43,8 @@ class OpenGLESRenderer() : android.opengl.GLSurfaceView.Renderer {
     // 每个纹理对应的 GL 资源与网格数据
     private data class MeshData(
         var texId: Int = 0,
+        var textureWidth: Int = 0,
+        var textureHeight: Int = 0,
         var vboPos: Int = 0,
         var vboTex: Int = 0,
         var ibo: Int = 0,
@@ -178,33 +180,55 @@ class OpenGLESRenderer() : android.opengl.GLSurfaceView.Renderer {
 
     // 创建或更新纹理，并返回 texId（在 GL 线程上下文中调用）
     fun uploadTexture(key: String, bitmap: Bitmap) {
-        // 若已存在则替换
-        val existing = meshes[key]
-        if (existing != null && existing.texId != 0) {
-            GLES20.glDeleteTextures(1, intArrayOf(existing.texId), 0)
-            existing.texId = 0
-        }
-
-        val texIds = IntArray(1)
-        GLES20.glGenTextures(1, texIds, 0)
-        val texId = texIds[0]
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texId)
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
-        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
-
         val mesh = meshes.getOrPut(key) { MeshData() }
-        mesh.texId = texId
+        val canReuseTexture = mesh.texId != 0 &&
+            mesh.textureWidth == bitmap.width &&
+            mesh.textureHeight == bitmap.height
+
+        if (canReuseTexture) {
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mesh.texId)
+            GLUtils.texSubImage2D(GLES20.GL_TEXTURE_2D, 0, 0, 0, bitmap)
+        } else {
+            if (mesh.texId != 0) {
+                GLES20.glDeleteTextures(1, intArrayOf(mesh.texId), 0)
+                mesh.texId = 0
+            }
+
+            val texIds = IntArray(1)
+            GLES20.glGenTextures(1, texIds, 0)
+            val texId = texIds[0]
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texId)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+            GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
+            mesh.texId = texId
+        }
+        mesh.textureWidth = bitmap.width
+        mesh.textureHeight = bitmap.height
 
         // 将此 key 标记为当前活动纹理，渲染线程将优先只绘制它，避免与先前上传的纹理重叠。
         activeKey = key
 
         // LRU 管理
+        touchTextureKey(key)
+    }
+
+    fun ensureMesh(key: String, meshW: Int, meshH: Int) {
+        if (meshW <= 0 || meshH <= 0) return
+        val existing = meshes[key]
+        if (existing != null && existing.vboPos != 0 && existing.ibo != 0 && existing.meshW == meshW && existing.meshH == meshH) {
+            touchTextureKey(key)
+            return
+        }
+        createMesh(key, meshW, meshH)
+    }
+
+    private fun touchTextureKey(key: String) {
         textureLru.remove(key)
         textureLru.addFirst(key)
-        // 如果超出限制，逐出最老的
+
         while (textureLru.size > maxTextures) {
             val removeKey = textureLru.removeLast()
             meshes.remove(removeKey)?.let { md ->

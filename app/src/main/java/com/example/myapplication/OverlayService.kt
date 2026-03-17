@@ -3,11 +3,8 @@ package com.example.myapplication
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.content.BroadcastReceiver
 import android.app.Service
-import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.os.Build
@@ -20,7 +17,6 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 
 class OverlayService : Service(), AudioCaptureManager.Listener {
 
@@ -38,8 +34,8 @@ class OverlayService : Service(), AudioCaptureManager.Listener {
         lockPosition = false, // 锁定位置
         autoStartOnBoot = false, // 启动时自动开始
         useAvatarVariant1 = false, // useAvatarVariant1 (默认 false)
-        avatarDir = "avatar",
-        avatarVariantDir = "avatar1",
+        avatarDir = AvatarAssets.DIR_AVATAR,
+        avatarVariantDir = AvatarAssets.DIR_AVATAR1,
         avatarAnchorOffsetPercent = 0f, // 头像锚点偏移百分比
         audioActivityThreshold = 0.05f, // 音频活动阈值
         audioInactivityTimeoutMs = 1500, // 音频无活动超时（毫秒）
@@ -65,14 +61,6 @@ class OverlayService : Service(), AudioCaptureManager.Listener {
         }
     }
 
-    private val settingsReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == SettingsActivity.ACTION_SETTINGS_CHANGED) {
-                reloadSettings()
-            }
-        }
-    }
-
     override fun onCreate() {
         super.onCreate()
         createChannelIfNeeded() // 创建通知渠道（仅 Android 8.0+）
@@ -82,15 +70,7 @@ class OverlayService : Service(), AudioCaptureManager.Listener {
         settingsRepository = OverlaySettingsRepository(this)
         currentSettings = settingsRepository.get()
         captureManager = AudioCaptureManager(this, this)
-
-        // 注册设置变更广播接收器
-        val filter = IntentFilter(SettingsActivity.ACTION_SETTINGS_CHANGED)
-        ContextCompat.registerReceiver(
-            this,
-            settingsReceiver,
-            filter,
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
+        preloadAvatarResources(currentSettings)
 
         // 启动定时刷新媒体上下文
         mainHandler.post(mediaStateRefreshRunnable)
@@ -161,7 +141,6 @@ class OverlayService : Service(), AudioCaptureManager.Listener {
         // 服务销毁，清理资源
         isRunning = false
         mainHandler.removeCallbacks(mediaStateRefreshRunnable)
-        unregisterReceiver(settingsReceiver)
         captureManager.stop()
         // 停止前将悬浮窗状态设为已停止，并显示结束精灵
         currentPlaybackState = PlaybackDanceState.STOPPED
@@ -264,7 +243,25 @@ class OverlayService : Service(), AudioCaptureManager.Listener {
     // 重新加载设置并应用到悬浮窗
     private fun reloadSettings() {
         currentSettings = settingsRepository.get()
+        preloadAvatarResources(currentSettings)
         overlayView?.applySettings(currentSettings)
+    }
+
+    private fun preloadAvatarResources(settings: OverlaySettings) {
+        // 预热两套形象的预览资源，让用户在 avatar / avatar1 之间来回切换时首图更快出现。
+        AvatarLoader.preloadSingleSpriteSet(
+            context = applicationContext,
+            preferredDir = settings.avatarDir,
+            maxFrames = AVATAR_PRELOAD_FRAME_COUNT,
+        )
+
+        if (settings.avatarVariantDir != settings.avatarDir) {
+            AvatarLoader.preloadSingleSpriteSet(
+                context = applicationContext,
+                preferredDir = settings.avatarVariantDir,
+                maxFrames = AVATAR_PRELOAD_FRAME_COUNT,
+            )
+        }
     }
 
     // 移除悬浮窗
@@ -419,6 +416,7 @@ class OverlayService : Service(), AudioCaptureManager.Listener {
         private const val MEDIA_STATE_REFRESH_INTERVAL_MS = 1_000L
         private const val CHANNEL_ID = "dancer_overlay_channel"
         private const val NOTIFICATION_ID = 1001
+        private const val AVATAR_PRELOAD_FRAME_COUNT = 3
         const val ACTION_APPLY_SETTINGS = "com.example.myapplication.action.APPLY_SETTINGS"
     }
 }

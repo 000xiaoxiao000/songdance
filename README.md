@@ -41,17 +41,15 @@
 ## 运行方法
 
 1. 可选：如果你打算使用运行时的 OpenGL ES 渲染器，可以将模型或纹理资源放在 `app/src/main/assets/` 下。
-2. 推荐：将 PNG 回退的跳舞帧放到 `app/src/main/res/drawable-nodpi/`，文件名以 `dancer_single1.png` 起始，以便运行时优先使用打包资源。
+2. 当前悬浮小人 PNG 图片请直接放在以下目录：
 
-   - 若帧当前位于 `app/src/main/assets/`（旧方式），当 drawable 资源缺失时应用会回退加载 assets 中的帧。但仍推荐把帧放入 `res/drawable(-nodpi)/` 以便打包与密度控制。
+   - `app/src/main/res/drawable/avatar/`
+   - `app/src/main/res/drawable/avatar1/`
 
-   示例（从 assets 复制到 drawable-nodpi）：
+   其中启动首帧应使用 `dancer_single_begin.png`，待机图使用 `dancer_single_end.png`，跳舞序列帧使用 `dancer_single1.png`、`dancer_single2.png` ...
 
-   ```bash
-   mkdir -p app/src/main/res/drawable-nodpi
-   cp app/src/main/assets/avatar/dancer_single{1..18}.png app/src/main/res/drawable-nodpi/  # 如有不同范围请调整
-   ./gradlew :app:processDebugResources
-   ```
+   > 说明：旧的 `app/src/main/assets/avatar*` 目录已废弃，不再作为小人图片来源。
+   > 当前构建会把 `res/drawable/avatar*` 暴露为可按路径读取的原始文件，供运行时加载。
 3. 在 Android Studio 中构建/安装，或使用 Gradle wrapper。
 4. 打开应用并授予必要权限：
    - 悬浮窗权限（Overlay permission）

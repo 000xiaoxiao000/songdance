@@ -14,8 +14,8 @@ data class OverlaySettings(
     val lockPosition: Boolean,
     val autoStartOnBoot: Boolean,
     val useAvatarVariant1: Boolean = false,
-    val avatarDir: String = "avatar",
-    val avatarVariantDir: String = "avatar1",
+    val avatarDir: String = AvatarAssets.DIR_AVATAR,
+    val avatarVariantDir: String = AvatarAssets.DIR_AVATAR1,
     val avatarAnchorOffsetPercent: Float = 0f,
     val audioActivityThreshold: Float = 0.05f,
     val audioInactivityTimeoutMs: Int = 1500,
@@ -74,11 +74,26 @@ class OverlaySettingsRepository(context: Context) {
         defaultValue: Float,
         percentRange: IntRange,
     ): Float {
-        val currentRaw = prefs.all[key]
-        if (currentRaw != null) {
-            val decoded = decodeStoredFloat(currentRaw, defaultValue, percentRange)
-            rewriteCurrentFloatIfNeeded(key, currentRaw, decoded, percentRange)
-            return decoded
+        // 先尝试以 Int 方式读取，因为 SeekBarPreference 通常存储 Int
+        if (prefs.contains(key)) {
+            val raw = try {
+                prefs.getInt(key, Int.MIN_VALUE)
+            } catch (e: ClassCastException) {
+                Int.MIN_VALUE
+            }
+
+            if (raw != Int.MIN_VALUE) {
+                // 如果能读到 Int，说明存储的是百分比整数
+                return normalizeFromCurrentNumber(raw.toFloat(), defaultValue, percentRange)
+            }
+            
+            // 如果读不到 Int (可能是旧版本存了 Float)，则尝试读取所有并手动解析
+            val currentRaw = prefs.all[key]
+            if (currentRaw != null) {
+                val decoded = decodeStoredFloat(currentRaw, defaultValue, percentRange)
+                rewriteCurrentFloatIfNeeded(key, currentRaw, decoded, percentRange)
+                return decoded
+            }
         }
 
         val legacyRaw = legacyPrefs.all[legacyKey]
@@ -207,8 +222,8 @@ class OverlaySettingsRepository(context: Context) {
         private const val DEFAULT_ALPHA = 0.92f
         private const val DEFAULT_AUDIO_THRESHOLD = 0.05f
         private const val DEFAULT_AUDIO_INACTIVITY_TIMEOUT_MS = 1500
-        private const val DEFAULT_AVATAR_DIR = "avatar"
-        private const val DEFAULT_AVATAR_VARIANT_DIR = "avatar1"
+        private const val DEFAULT_AVATAR_DIR = AvatarAssets.DIR_AVATAR
+        private const val DEFAULT_AVATAR_VARIANT_DIR = AvatarAssets.DIR_AVATAR1
 
         private val SENSITIVITY_PERCENT_RANGE = 60..200
         private val SCALE_PERCENT_RANGE = 70..180

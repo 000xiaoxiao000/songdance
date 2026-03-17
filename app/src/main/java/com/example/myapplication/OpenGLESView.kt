@@ -68,7 +68,7 @@ class OpenGLESView @JvmOverloads constructor(
     // 便捷接口：上传位图并确保 mesh 已创建
     fun uploadBitmapWithMesh(key: String, bitmap: Bitmap, meshW: Int, meshH: Int) {
         queueEvent {
-            renderer.createMesh(key, meshW, meshH)
+            renderer.ensureMesh(key, meshW, meshH)
             renderer.uploadTexture(key, bitmap)
         }
         post { requestRender() }

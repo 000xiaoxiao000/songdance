@@ -101,15 +101,15 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         private fun notifySettingsChanged() {
-            // Send a broadcast for backwards compatibility and also notify the service directly
+            // 配置已经写入偏好设置；服务运行中时直接通知它重新应用即可，
+            // 避免“广播 + 显式指令”双通道导致同一批资源被重复重载。
             val ctx = requireContext()
-            ctx.sendBroadcast(Intent(ACTION_SETTINGS_CHANGED).setPackage(ctx.packageName))
-            if (OverlayService.isRunning) {
-                val intent = Intent(ctx, OverlayService::class.java).apply {
-                    action = OverlayService.ACTION_APPLY_SETTINGS
-                }
-                ctx.startService(intent)
+            if (!OverlayService.isRunning) return
+
+            val intent = Intent(ctx, OverlayService::class.java).apply {
+                action = OverlayService.ACTION_APPLY_SETTINGS
             }
+            ctx.startService(intent)
         }
 
         companion object {
@@ -122,6 +122,7 @@ class SettingsActivity : AppCompatActivity() {
             private const val KEY_AVATAR_ANCHOR = OverlaySettingsRepository.KEY_AVATAR_ANCHOR_OFFSET
             private const val KEY_AUDIO_THRESHOLD = OverlaySettingsRepository.KEY_AUDIO_THRESHOLD
             private const val KEY_AUDIO_INACTIVITY = OverlaySettingsRepository.KEY_AUDIO_INACTIVITY_TIMEOUT
+            // 这里保留底层兼容键名，避免影响历史配置；用户界面文案统一使用“形象”表述。
             private const val KEY_USE_AVATAR1 = OverlaySettingsRepository.KEY_USE_AVATAR_VARIANT_1
             private const val KEY_AVATAR_DIR = OverlaySettingsRepository.KEY_AVATAR_DIR
             private const val KEY_AVATAR_VARIANT_DIR = OverlaySettingsRepository.KEY_AVATAR_VARIANT_DIR

@@ -50,6 +50,12 @@ android {
 
     sourceSets {
         getByName("main") {
+            // 当前悬浮小人图片的权威来源位于：
+            // - src/main/res/drawable/avatar
+            // - src/main/res/drawable/avatar1
+            // 旧的 src/main/assets/avatar* 已不再使用。
+            // 这里额外把 res/drawable 暴露到 assets 读取路径，仅用于让 AvatarLoader
+            // 可以按 avatar/...、avatar1/... 的原始文件路径读取图片。
             assets.srcDirs("src/main/assets", "src/main/res/drawable")
         }
     }

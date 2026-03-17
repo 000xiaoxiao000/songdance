@@ -5,22 +5,31 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
- * AvatarLoader
+ * 小人图片加载与预处理入口。
  *
- * 推荐将与 avatar 图片相关的加载/预处理逻辑集中在这里：
- * - 支持 drawable/{avatar,avatar1} 两个目录优先级切换
- * - 提供按序号加载的单帧序列（dancer_singleN.*）
- * - 提供按名称加载的分层部件（avatar_body/avatar_head 等）
- * - 预处理：可选的自动去背景、裁剪透明像素、统一输出尺寸（缓存结果以避免重复开销）
+ * 主要职责：
+ * - 按业务目录切换 `avatar` / `avatar1`
+ * - 读取单帧序列、begin 图、end 图和分层部件图
+ * - 对原图做去背景、裁掉透明边、统一输出尺寸
+ * - 通过内存缓存避免重复解码与重复预处理
  *
- * 设计要点：
- * - 读取时一次性做昂贵操作（去背/裁切/缩放），在内存允许时缓存 Bitmap
- * - 如果图片本身带 alpha，尽量保留不做去背景
- * - 对于过渡混合（避免重影），建议在视图层面使用离屏合成或共享网格，本类只负责提供干净的位图
+ * 资源约定：
+ * - 图片权威来源：`res/drawable/avatar`、`res/drawable/avatar1`
+ * - 运行时主读取方式：通过构建阶段暴露出来的 `avatar/...`、`avatar1/...` 原始文件路径读取
+ * - 兼容兜底方式：尝试读取扁平化的 drawable 名称，例如 `avatar_dancer_single_begin`
  */
 object AvatarLoader {
+    private const val TAG = "AvatarLoader"
+    private const val TARGET_WIDTH = 500
+    private const val TARGET_HEIGHT = 400
+
     data class LoadedSprite(
         val bitmap: Bitmap,
         val pivotX: Float = 0.5f,
@@ -33,153 +42,330 @@ object AvatarLoader {
         val end: LoadedSprite?,
     )
 
+    private data class SpriteSetRequest(
+        val dir: String,
+        val maxFrames: Int,
+    ) {
+        val normalizedDir: String = dir.trim().trim('/')
+        val cacheKey: String = if (normalizedDir.isEmpty()) {
+            "sprite_set::$maxFrames"
+        } else {
+            "sprite_set::$normalizedDir#$maxFrames"
+        }
+    }
+
     private val preferredExtensions = listOf("png", "webp", "jpg", "jpeg")
 
+    // 内存缓存，避免重复处理相同的资源文件
+    private val processedCache = android.util.LruCache<String, Bitmap>(60)
+    // 资源集缓存只保留最近几组热点结果，避免来回切换时反复遍历所有文件。
+    private val spriteSetCache = android.util.LruCache<String, SingleSpriteSet>(3)
+    private val spriteSetCacheLock = Any()
+    private val spriteSetInFlight = mutableMapOf<String, CompletableDeferred<SingleSpriteSet>>()
+    private val preloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private data class SpriteRequest(
+        val dir: String,
+        val baseName: String,
+    ) {
+        val normalizedDir: String = dir.trim().trim('/')
+        val cacheKey: String = if (normalizedDir.isEmpty()) {
+            "sprite::$baseName"
+        } else {
+            "sprite::$normalizedDir/$baseName"
+        }
+    }
+
     /**
-     * Load single-sprite animation frames from assets directories.
-     * Searches in order: preferredDir, otherDir, root assets. Returns at most maxFrames frames.
+     * 统一加载入口：
+     * 1. 优先读取由 `res/drawable/avatar*` 暴露出来的原始文件路径；
+     * 2. 再兼容尝试扁平化 drawable 资源名（如 `avatar_dancer_single_begin`）。
+     *
+     * 说明：业务上图片来源已经迁移到 `drawable/avatar`、`drawable/avatar1`，
+     * 不再依赖旧的 `src/main/assets/avatar*` 目录；这里只是复用打包后的文件读取能力。
      */
-    fun loadSingleSpriteFrames(
-        context: Context,
-        preferredDir: String,
-        otherDir: String,
-        maxFrames: Int = 18,
-    ): List<LoadedSprite> {
-        val assets = context.assets
-        val result = mutableListOf<LoadedSprite>()
+    private fun loadAvatarBitmap(context: Context, dir: String, baseName: String): Bitmap? {
+        val request = SpriteRequest(dir = dir, baseName = baseName)
+        processedCache.get(request.cacheKey)?.takeIf { !it.isRecycled }?.let { return it }
 
-        for (i in 1..maxFrames) {
-            val base = "dancer_single$i"
-            val candidates = buildList {
-                for (ext in preferredExtensions) add("$preferredDir/$base.$ext")
-                for (ext in preferredExtensions) add("$otherDir/$base.$ext")
-                for (ext in preferredExtensions) add("$base.$ext")
-            }
+        val decoded = decodeFromDrawableSubdir(context, request)
+            ?: decodeFromDrawableResource(context, request)
 
-            var loaded: LoadedSprite? = null
-            for (path in candidates) {
-                loaded = tryLoadFromAssets(assets, path)?.let { LoadedSprite(it, 0.5f, 0.5f) }
-                if (loaded != null) break
-            }
-            if (loaded != null) result.add(loaded) else break
+        if (decoded == null) {
+            android.util.Log.w(TAG, "未找到小人图片: dir=${request.normalizedDir}, baseName=${request.baseName}")
+            return null
         }
 
-        return result
+        return try {
+            prepareAvatarBitmap(decoded).also { processed ->
+                processedCache.put(request.cacheKey, processed)
+            }
+        } catch (e: Exception) {
+            if (!decoded.isRecycled) decoded.recycle()
+            android.util.Log.e(TAG, "处理小人图片失败: dir=${request.normalizedDir}, baseName=${request.baseName}", e)
+            null
+        }
     }
 
-    fun loadSingleSpriteSet(
-        context: Context,
-        preferredDir: String,
-        otherDir: String,
-        maxFrames: Int = 18,
-    ): SingleSpriteSet {
-        val frames = loadSingleSpriteFrames(
-            context = context,
-            preferredDir = preferredDir,
-            otherDir = otherDir,
-            maxFrames = maxFrames,
-        )
-        val begin = loadNamedSingleSprite(
-            context = context,
-            preferredDir = preferredDir,
-            otherDir = otherDir,
-            baseName = "dancer_single_begin",
-        )
-        val end = loadNamedSingleSprite(
-            context = context,
-            preferredDir = preferredDir,
-            otherDir = otherDir,
-            baseName = "dancer_single_end",
-        )
-        return SingleSpriteSet(frames = frames, begin = begin, end = end)
-    }
-
-    fun loadNamedSingleSprite(
-        context: Context,
-        preferredDir: String,
-        otherDir: String,
-        baseName: String,
-    ): LoadedSprite? {
+    // 主路径：读取构建后可通过 avatar/...、avatar1/... 访问到的原始图片文件。
+    private fun decodeFromDrawableSubdir(context: Context, request: SpriteRequest): Bitmap? {
         val assets = context.assets
-        val candidates = buildList {
-            for (ext in preferredExtensions) add("$preferredDir/$baseName.$ext")
-            for (ext in preferredExtensions) add("$otherDir/$baseName.$ext")
-            for (ext in preferredExtensions) add("$baseName.$ext")
+        val basePath = if (request.normalizedDir.isEmpty()) {
+            request.baseName
+        } else {
+            "${request.normalizedDir}/${request.baseName}"
         }
-        for (path in candidates) {
-            val bmp = tryLoadFromAssets(assets, path) ?: continue
-            return LoadedSprite(bmp, 0.5f, 0.5f)
+
+        for (ext in preferredExtensions) {
+            val assetPath = "$basePath.$ext"
+            val bitmap = decodeBitmapFromAssetPath(assets, assetPath)
+            if (bitmap != null) {
+                android.util.Log.d(TAG, "从 drawable 子目录加载成功: $assetPath")
+                return bitmap
+            }
         }
+
         return null
     }
 
-    /**
-     * Load layered sprite parts by name -> attempts to find drawable names under assets.
-     * keys expects names like "avatar_body", "avatar_head" etc. If prefersVariant is true,
-     * tries avatar1-prefixed names first (avatar1_body) then avatar_body then root.
-     */
-    fun loadLayeredSprites(
-        context: Context,
-        keys: List<String>,
-        prefersVariant: Boolean,
-        avatarDir: String,
-        avatarVariantDir: String,
-    ): Map<String, LoadedSprite> {
-        val assets = context.assets
-        val out = mutableMapOf<String, LoadedSprite>()
-        for (key in keys) {
-            val candidateNames = if (prefersVariant && key.startsWith("avatar")) {
-                val alt = key.replaceFirst("avatar", "avatar1")
-                listOf(alt, key)
-            } else listOf(key)
-
-            var found: LoadedSprite? = null
-            // Try asset directories first with extensions
-            val dirs = buildList {
-                // prefer chosen folders
-                if (prefersVariant) add(avatarVariantDir) else add(avatarDir)
-                if (prefersVariant) add(avatarDir) else add(avatarVariantDir)
-                add("")
-            }
-
-            run loop@{
-                for (name in candidateNames) {
-                    for (dir in dirs) {
-                        for (ext in preferredExtensions) {
-                            val path = if (dir.isEmpty()) "$name.$ext" else "$dir/$name.$ext"
-                            val bmp = tryLoadFromAssets(assets, path)
-                            if (bmp != null) {
-                                found = LoadedSprite(bmp, 0.5f, 0.5f)
-                                return@loop
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (found != null) out[key] = found
-        }
-
-        return out
-    }
-
-    private fun tryLoadFromAssets(assetManager: android.content.res.AssetManager, path: String): Bitmap? {
+    private fun decodeBitmapFromAssetPath(
+        assetManager: android.content.res.AssetManager,
+        assetPath: String,
+    ): Bitmap? {
         return try {
-            assetManager.open(path).use { stream ->
-                BitmapFactory.decodeStream(stream, null, BitmapFactory.Options().apply {
+            assetManager.open(assetPath).use { input ->
+                BitmapFactory.decodeStream(input, null, BitmapFactory.Options().apply {
                     inPreferredConfig = Bitmap.Config.ARGB_8888
                     inMutable = true
-                })?.let { prepareAvatarBitmap(it) }
+                })
             }
         } catch (_: Exception) {
             null
         }
     }
 
-    // ----- Preprocessing helpers (copied/adapted behavior) -----
+    // 兼容兜底：若未来资源被扁平化到 drawable 根目录，则继续支持按资源名查找。
+    @Suppress("DiscouragedApi")
+    private fun decodeFromDrawableResource(context: Context, request: SpriteRequest): Bitmap? {
+        val resourceNames = buildList {
+            if (request.normalizedDir.isNotEmpty()) {
+                add("${request.normalizedDir}_${request.baseName}")
+            }
+            add(request.baseName)
+        }
+
+        for (resName in resourceNames) {
+            val resId = context.resources.getIdentifier(resName, "drawable", context.packageName)
+            if (resId == 0) continue
+
+            val bitmap = BitmapFactory.decodeResource(context.resources, resId, BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+                inMutable = true
+            })
+            if (bitmap != null) {
+                android.util.Log.d(TAG, "从 drawable 资源名加载成功: $resName")
+                return bitmap
+            }
+        }
+
+        return null
+    }
+
+    /** 加载单人跳舞序列帧。 */
+    fun loadSingleSpriteFrames(
+        context: Context,
+        preferredDir: String,
+        maxFrames: Int = 18,
+    ): List<LoadedSprite> {
+        val result = mutableListOf<LoadedSprite>()
+
+        for (i in 1..maxFrames) {
+            val base = "dancer_single$i"
+
+            val bmp = loadAvatarBitmap(context, preferredDir, base)
+
+            if (bmp != null) {
+                result.add(LoadedSprite(bmp, 0.5f, 0.5f))
+            } else {
+                if (i > 1) break // 如果中间断了则停止
+            }
+        }
+
+        return result
+    }
+
+    private fun buildSingleSpriteSet(
+        context: Context,
+        preferredDir: String,
+        maxFrames: Int = 18,
+    ): SingleSpriteSet {
+        val frames = loadSingleSpriteFrames(
+            context = context,
+            preferredDir = preferredDir,
+            maxFrames = maxFrames,
+        )
+        val begin = loadNamedSingleSprite(
+            context = context,
+            preferredDir = preferredDir,
+            baseName = "dancer_single_begin",
+        )
+        val end = loadNamedSingleSprite(
+            context = context,
+            preferredDir = preferredDir,
+            baseName = "dancer_single_end",
+        )
+        return SingleSpriteSet(frames = frames, begin = begin, end = end)
+    }
+
+    fun getCachedSingleSpriteSet(
+        preferredDir: String,
+        maxFrames: Int,
+    ): SingleSpriteSet? {
+        val request = SpriteSetRequest(preferredDir, maxFrames)
+        return synchronized(spriteSetCacheLock) {
+            spriteSetCache.get(request.cacheKey)
+        }
+    }
+
+    suspend fun loadOrAwaitSingleSpriteSet(
+        context: Context,
+        preferredDir: String,
+        maxFrames: Int = 18,
+    ): SingleSpriteSet {
+        val appContext = context.applicationContext
+        val request = SpriteSetRequest(preferredDir, maxFrames)
+
+        synchronized(spriteSetCacheLock) {
+            spriteSetCache.get(request.cacheKey)?.let { return it }
+        }
+
+        val deferredToAwait: CompletableDeferred<SingleSpriteSet>
+        val shouldLoad = synchronized(spriteSetCacheLock) {
+            spriteSetCache.get(request.cacheKey)?.let { return it }
+
+            val running = spriteSetInFlight[request.cacheKey]
+            if (running != null) {
+                deferredToAwait = running
+                false
+            } else {
+                CompletableDeferred<SingleSpriteSet>().also { created ->
+                    spriteSetInFlight[request.cacheKey] = created
+                    deferredToAwait = created
+                }
+                true
+            }
+        }
+
+        if (!shouldLoad) {
+            return deferredToAwait.await()
+        }
+
+        return try {
+            val loaded = buildSingleSpriteSet(
+                context = appContext,
+                preferredDir = preferredDir,
+                maxFrames = maxFrames,
+            )
+            synchronized(spriteSetCacheLock) {
+                spriteSetCache.put(request.cacheKey, loaded)
+                spriteSetInFlight.remove(request.cacheKey)
+            }
+            deferredToAwait.complete(loaded)
+            loaded
+        } catch (t: Throwable) {
+            synchronized(spriteSetCacheLock) {
+                spriteSetInFlight.remove(request.cacheKey)
+            }
+            deferredToAwait.completeExceptionally(t)
+            throw t
+        }
+    }
+
+    fun preloadSingleSpriteSet(
+        context: Context,
+        preferredDir: String,
+        maxFrames: Int = 18,
+    ) {
+        val request = SpriteSetRequest(preferredDir, maxFrames)
+        synchronized(spriteSetCacheLock) {
+            if (spriteSetCache.get(request.cacheKey) != null || spriteSetInFlight.containsKey(request.cacheKey)) {
+                return
+            }
+        }
+
+        val appContext = context.applicationContext
+        preloadScope.launch {
+            runCatching {
+                loadOrAwaitSingleSpriteSet(
+                    context = appContext,
+                    preferredDir = preferredDir,
+                    maxFrames = maxFrames,
+                )
+            }.onSuccess { loaded ->
+                android.util.Log.d(
+                    TAG,
+                    "小人资源预热完成: dir=${request.normalizedDir}, frames=${loaded.frames.size}, maxFrames=$maxFrames"
+                )
+            }.onFailure { error ->
+                android.util.Log.w(
+                    TAG,
+                    "小人资源预热失败: dir=${request.normalizedDir}, maxFrames=$maxFrames",
+                    error
+                )
+            }
+        }
+    }
+
+    fun loadSingleSpriteSet(
+        context: Context,
+        preferredDir: String,
+        maxFrames: Int = 18,
+    ): SingleSpriteSet {
+        getCachedSingleSpriteSet(preferredDir, maxFrames)?.let { return it }
+
+        return buildSingleSpriteSet(
+            context = context,
+            preferredDir = preferredDir,
+            maxFrames = maxFrames,
+        ).also { spriteSet ->
+            val request = SpriteSetRequest(preferredDir, maxFrames)
+            synchronized(spriteSetCacheLock) {
+                spriteSetCache.put(request.cacheKey, spriteSet)
+            }
+        }
+    }
+
+
+    fun loadNamedSingleSprite(
+        context: Context,
+        preferredDir: String,
+        baseName: String,
+    ): LoadedSprite? {
+        val bmp = loadAvatarBitmap(context, preferredDir, baseName)
+        if (bmp != null) return LoadedSprite(bmp, 0.5f, 0.5f)
+
+        return null
+    }
+
+    /** 按名称加载分层小人部件，例如 `avatar_body`、`avatar_head`。 */
+    fun loadLayeredSprites(
+        context: Context,
+        keys: List<String>,
+        avatarDir: String,
+    ): Map<String, LoadedSprite> {
+        val out = mutableMapOf<String, LoadedSprite>()
+        for (key in keys) {
+            val bmp = loadAvatarBitmap(context, avatarDir, key) ?: continue
+            out[key] = LoadedSprite(bmp, 0.5f, 0.5f)
+        }
+
+        return out
+    }
+
+    // ----- 预处理辅助方法 -----
     private fun prepareAvatarBitmap(bitmap: Bitmap): Bitmap {
         var src = bitmap
-        // If image is an extremely wide sprite sheet, try to crop a single column to avoid accidental sheets
+        // 如果是宽图序列，尝试裁剪第一格（避免误用图集）
         if (src.width > src.height * 2) {
             val oneWidth = src.width / 5
             src = Bitmap.createBitmap(src, 0, 0, oneWidth, src.height)
@@ -188,23 +374,35 @@ object AvatarLoader {
         val transparent = autoRemoveBackground(src)
         val cropped = cropBitmapTransparency(transparent)
 
-        val targetWidth = 500
-        val targetHeight = 400
-        val result = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888).apply {
+        // 统一输出尺寸: 500x400 (宽x高)
+        val result = Bitmap.createBitmap(TARGET_WIDTH, TARGET_HEIGHT, Bitmap.Config.ARGB_8888).apply {
             setHasAlpha(true)
             setPremultiplied(true)
         }
         val canvas = Canvas(result)
         canvas.drawColor(Color.TRANSPARENT)
 
-        val scale = minOf(targetWidth.toFloat() / cropped.width, targetHeight.toFloat() / cropped.height)
+        val scale = minOf(TARGET_WIDTH.toFloat() / cropped.width, TARGET_HEIGHT.toFloat() / cropped.height)
         val drawWidth = (cropped.width * scale).toInt()
         val drawHeight = (cropped.height * scale).toInt()
-        val left = (targetWidth - drawWidth) / 2
-        val top = targetHeight - drawHeight // bottom align
+        val left = (TARGET_WIDTH - drawWidth) / 2
+        val top = TARGET_HEIGHT - drawHeight // 底部对齐
         val rect = android.graphics.Rect(left, top, left + drawWidth, top + drawHeight)
         canvas.drawBitmap(cropped, null, rect, null)
+
+        // 输出结果已经生成，及时释放本次处理链上所有中间位图，避免累计占用内存。
+        recycleBitmaps(bitmap, src, transparent, cropped)
+
         return result
+    }
+
+    private fun recycleBitmaps(vararg bitmaps: Bitmap?) {
+        val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Bitmap, Boolean>())
+        bitmaps.forEach { bitmap ->
+            if (bitmap != null && seen.add(bitmap) && !bitmap.isRecycled) {
+                bitmap.recycle()
+            }
+        }
     }
 
     private fun autoRemoveBackground(source: Bitmap): Bitmap {
@@ -239,10 +437,10 @@ object AvatarLoader {
             val y = idx / width
 
             // neighbors
-            if (y > 0) checkAndPush(pixels, visited, queue, idx - width, width, tolerance)
-            if (y < height - 1) checkAndPush(pixels, visited, queue, idx + width, width, tolerance)
-            if (x > 0) checkAndPush(pixels, visited, queue, idx - 1, width, tolerance)
-            if (x < width - 1) checkAndPush(pixels, visited, queue, idx + 1, width, tolerance)
+            if (y > 0) checkAndPush(pixels, visited, queue, idx - width, bgColor, tolerance)
+            if (y < height - 1) checkAndPush(pixels, visited, queue, idx + width, bgColor, tolerance)
+            if (x > 0) checkAndPush(pixels, visited, queue, idx - 1, bgColor, tolerance)
+            if (x < width - 1) checkAndPush(pixels, visited, queue, idx + 1, bgColor, tolerance)
         }
 
         return Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888).apply {
@@ -251,24 +449,29 @@ object AvatarLoader {
         }
     }
 
-    private fun checkAndPush(pixels: IntArray, visited: BooleanArray, queue: java.util.ArrayDeque<Int>, idx: Int, stride: Int, tolerance: Int) {
+    private fun checkAndPush(
+        pixels: IntArray,
+        visited: BooleanArray,
+        queue: java.util.ArrayDeque<Int>,
+        idx: Int,
+        bgColor: Int,
+        tolerance: Int,
+    ) {
         if (visited[idx]) return
         visited[idx] = true
-        // compare to top-left original bg sample is not available here; rely on approximate check by alpha
         val color = pixels[idx]
-        if (((color ushr 24) and 0xFF) >= 250) {
-            // nearly opaque -> not background
+        val alpha = (color ushr 24) and 0xFF
+        if (alpha == 0 || isSimilarColor(color, bgColor, tolerance)) {
+            queue.add(idx)
             return
         }
-        // If RGB very similar to pixel[0] this will have been added earlier; keep conservative approach
-        queue.add(idx)
     }
 
-    private fun isSimilarColor(c1: Int, c2: Int): Boolean {
+    private fun isSimilarColor(c1: Int, c2: Int, tolerance: Int = 20): Boolean {
         val r = kotlin.math.abs(((c1 shr 16) and 0xFF) - ((c2 shr 16) and 0xFF))
         val g = kotlin.math.abs(((c1 shr 8) and 0xFF) - ((c2 shr 8) and 0xFF))
         val b = kotlin.math.abs((c1 and 0xFF) - (c2 and 0xFF))
-        return r <= 20 && g <= 20 && b <= 20
+        return r <= tolerance && g <= tolerance && b <= tolerance
     }
 
     private fun cropBitmapTransparency(source: Bitmap): Bitmap {
@@ -311,4 +514,3 @@ object AvatarLoader {
         }
     }
 }
-
