@@ -83,7 +83,3 @@ The images below illustrate the overlay and example behavior (in order):
 <img src="effect_picture/effect_picture3.jpg" alt="Screenshot 3" width="240" style="max-width:100%;height:auto;" />
 
 <img src="effect_picture/effect_picture4.jpg" alt="Screenshot 4" width="240" style="max-width:100%;height:auto;" />
-
-<img src="Payment_Receipt_Code.png" alt="Payment Receipt Code" width="300" style="max-width:100%;height:auto;" />
-
-
