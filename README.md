@@ -82,7 +82,3 @@
 <img src="effect_picture/effect_picture3.jpg" alt="效果图3" width="240" style="max-width:100%;height:auto;" />
 
 <img src="effect_picture/effect_picture4.jpg" alt="效果图4" width="240" style="max-width:100%;height:auto;" />
-
-<img src="Payment_Receipt_Code.png" alt="付款码" width="300" style="max-width:100%;height:auto;" />
-
-
