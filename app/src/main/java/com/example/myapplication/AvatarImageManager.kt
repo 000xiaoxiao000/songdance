@@ -31,19 +31,10 @@ object AvatarImageManager {
         imageName: String
     ): Boolean {
         return try {
-            val inputStream = context.contentResolver.openInputStream(uri) ?: return false
-            val bitmap = BitmapFactory.decodeStream(inputStream)
-            inputStream.close()
-            
             val dir = getAvatarDirectory(context, setName)
             val file = File(dir, "$imageName.png")
             
-            FileOutputStream(file).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-            }
-            
-            bitmap.recycle()
-            true
+            ImageCompressor.compressAndSave(context, uri, file)
         } catch (e: Exception) {
             android.util.Log.e("AvatarImageManager", "保存图片失败", e)
             false

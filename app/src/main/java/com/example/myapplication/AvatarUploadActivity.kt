@@ -1,6 +1,7 @@
 package com.example.myapplication
 
 import android.app.Activity
+import android.app.ProgressDialog
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -16,12 +17,18 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.TextView
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 class AvatarUploadActivity : AppCompatActivity() {
     
     private lateinit var currentSetName: String
     private lateinit var adapter: AvatarImageAdapter
     private var isSelectionMode = false
+    private var progressDialog: ProgressDialog? = null
     
     private val pickImageLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -34,6 +41,18 @@ class AvatarUploadActivity : AppCompatActivity() {
     ) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
             handleMultipleImagesSelected(uris)
+        }
+    }
+    
+    companion object {
+        private const val EXTRA_SET_NAME = "set_name"
+        private const val MAX_FILE_SIZE_MB = 5
+        private const val MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+        
+        fun createIntent(activity: Activity, setName: String): Intent {
+            return Intent(activity, AvatarUploadActivity::class.java).apply {
+                putExtra(EXTRA_SET_NAME, setName)
+            }
         }
     }
     
@@ -70,6 +89,7 @@ class AvatarUploadActivity : AppCompatActivity() {
         val recyclerView = findViewById<RecyclerView>(R.id.rvImages)
         recyclerView.layoutManager = GridLayoutManager(this, 3)
         adapter = AvatarImageAdapter(
+            context = this,
             setName = currentSetName,
             onItemClick = { imageName ->
                 if (isSelectionMode) {
@@ -130,60 +150,100 @@ class AvatarUploadActivity : AppCompatActivity() {
     }
     
     private fun handleImageSelected(uri: Uri) {
-        // 获取当前已有的图片数量，自动生成下一个序号
-        val existingImages = AvatarImageManager.getAvailableImageNames(this, currentSetName)
-        val nextIndex = getNextFrameIndex(existingImages)
-        val imageName = "dancer_single$nextIndex"
-        
-        val success = AvatarImageManager.saveAvatarImage(
-            context = this,
-            uri = uri,
-            setName = currentSetName,
-            imageName = imageName
-        )
-        
-        if (success) {
-            Toast.makeText(this, "图片上传成功: $imageName", Toast.LENGTH_SHORT).show()
-            loadImages()
-        } else {
-            Toast.makeText(this, "图片上传失败", Toast.LENGTH_SHORT).show()
+        val fileSize = getFileSize(uri)
+        if (fileSize > MAX_FILE_SIZE_BYTES) {
+            val sizeMB = String.format("%.2f", fileSize / (1024f * 1024f))
+            showFileSizeErrorDialog(sizeMB)
+            return
         }
-    }
-    
-    private fun handleMultipleImagesSelected(uris: List<Uri>) {
-        var successCount = 0
-        var failCount = 0
         
-        val existingImages = AvatarImageManager.getAvailableImageNames(this, currentSetName)
-        var nextIndex = getNextFrameIndex(existingImages)
+        showProgressDialog("正在上传图片...", 1, 0)
         
-        uris.forEach { uri ->
+        CoroutineScope(Dispatchers.IO).launch {
+            val existingImages = AvatarImageManager.getAvailableImageNames(this@AvatarUploadActivity, currentSetName)
+            val nextIndex = getNextFrameIndex(existingImages)
             val imageName = "dancer_single$nextIndex"
+            
             val success = AvatarImageManager.saveAvatarImage(
-                context = this,
+                context = this@AvatarUploadActivity,
                 uri = uri,
                 setName = currentSetName,
                 imageName = imageName
             )
             
-            if (success) {
-                successCount++
-                nextIndex++
-            } else {
-                failCount++
+            withContext(Dispatchers.Main) {
+                dismissProgressDialog()
+                
+                if (success) {
+                    showSuccessDialog("上传成功", "图片已成功添加到图片集")
+                    loadImages()
+                } else {
+                    showErrorDialog("上传失败", "图片保存失败，请重试")
+                }
+            }
+        }
+    }
+    
+    private fun handleMultipleImagesSelected(uris: List<Uri>) {
+        val oversizedFiles = mutableListOf<Pair<Int, String>>()
+        uris.forEachIndexed { index, uri ->
+            val fileSize = getFileSize(uri)
+            if (fileSize > MAX_FILE_SIZE_BYTES) {
+                val sizeMB = String.format("%.2f", fileSize / (1024f * 1024f))
+                oversizedFiles.add(index + 1 to sizeMB)
             }
         }
         
-        val message = buildString {
-            append("批量上传完成: ")
-            append("成功 $successCount 张")
-            if (failCount > 0) {
-                append(", 失败 $failCount 张")
-            }
+        if (oversizedFiles.isNotEmpty()) {
+            showBatchFileSizeErrorDialog(oversizedFiles, uris.size)
+            return
         }
         
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
-        loadImages()
+        showProgressDialog("正在批量上传图片...", uris.size, 0)
+        
+        CoroutineScope(Dispatchers.IO).launch {
+            var successCount = 0
+            var failCount = 0
+            
+            val existingImages = AvatarImageManager.getAvailableImageNames(this@AvatarUploadActivity, currentSetName)
+            var nextIndex = getNextFrameIndex(existingImages)
+            
+            uris.forEachIndexed { index, uri ->
+                val imageName = "dancer_single$nextIndex"
+                val success = AvatarImageManager.saveAvatarImage(
+                    context = this@AvatarUploadActivity,
+                    uri = uri,
+                    setName = currentSetName,
+                    imageName = imageName
+                )
+                
+                if (success) {
+                    successCount++
+                    nextIndex++
+                } else {
+                    failCount++
+                }
+                
+                withContext(Dispatchers.Main) {
+                    updateProgressDialog(index + 1)
+                }
+            }
+            
+            withContext(Dispatchers.Main) {
+                dismissProgressDialog()
+                
+                val message = buildString {
+                    append("批量上传完成\n\n")
+                    append("✓ 成功: $successCount 张")
+                    if (failCount > 0) {
+                        append("\n✗ 失败: $failCount 张")
+                    }
+                }
+                
+                showResultDialog("上传完成", message)
+                loadImages()
+            }
+        }
     }
     
     private fun getNextFrameIndex(existingImages: List<String>): Int {
@@ -212,31 +272,43 @@ class AvatarUploadActivity : AppCompatActivity() {
     
     private fun batchDeleteImages() {
         val selectedImages = adapter.getSelectedImages()
-        var successCount = 0
-        var failCount = 0
+        showProgressDialog("正在删除图片...", selectedImages.size, 0)
         
-        selectedImages.forEach { imageName ->
-            val file = AvatarImageManager.getAvatarDirectory(this, currentSetName)
-                .resolve("$imageName.png")
+        CoroutineScope(Dispatchers.IO).launch {
+            var successCount = 0
+            var failCount = 0
             
-            if (file.delete()) {
-                successCount++
-            } else {
-                failCount++
+            selectedImages.forEachIndexed { index, imageName ->
+                val file = AvatarImageManager.getAvatarDirectory(this@AvatarUploadActivity, currentSetName)
+                    .resolve("$imageName.png")
+                
+                if (file.delete()) {
+                    successCount++
+                } else {
+                    failCount++
+                }
+                
+                withContext(Dispatchers.Main) {
+                    updateProgressDialog(index + 1)
+                }
+            }
+            
+            withContext(Dispatchers.Main) {
+                dismissProgressDialog()
+                
+                val message = buildString {
+                    append("批量删除完成\n\n")
+                    append("✓ 成功: $successCount 张")
+                    if (failCount > 0) {
+                        append("\n✗ 失败: $failCount 张")
+                    }
+                }
+                
+                showResultDialog("删除完成", message)
+                toggleSelectionMode()
+                loadImages()
             }
         }
-        
-        val message = buildString {
-            append("批量删除完成: ")
-            append("成功 $successCount 张")
-            if (failCount > 0) {
-                append(", 失败 $failCount 张")
-            }
-        }
-        
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
-        toggleSelectionMode()
-        loadImages()
     }
     
     private fun showDeleteConfirmDialog(imageName: String) {
@@ -251,14 +323,24 @@ class AvatarUploadActivity : AppCompatActivity() {
     }
     
     private fun deleteImage(imageName: String) {
-        val file = AvatarImageManager.getAvatarDirectory(this, currentSetName)
-            .resolve("$imageName.png")
+        showProgressDialog("正在删除图片...", 1, 0)
         
-        if (file.delete()) {
-            Toast.makeText(this, "删除成功", Toast.LENGTH_SHORT).show()
-            loadImages()
-        } else {
-            Toast.makeText(this, "删除失败", Toast.LENGTH_SHORT).show()
+        CoroutineScope(Dispatchers.IO).launch {
+            val file = AvatarImageManager.getAvatarDirectory(this@AvatarUploadActivity, currentSetName)
+                .resolve("$imageName.png")
+            
+            val success = file.delete()
+            
+            withContext(Dispatchers.Main) {
+                dismissProgressDialog()
+                
+                if (success) {
+                    showSuccessDialog("删除成功", "图片已从图片集中移除")
+                    loadImages()
+                } else {
+                    showErrorDialog("删除失败", "无法删除图片，请重试")
+                }
+            }
         }
     }
     
@@ -274,26 +356,111 @@ class AvatarUploadActivity : AppCompatActivity() {
     }
     
     private fun clearAllImages() {
-        if (AvatarImageManager.deleteAvatarSet(this, currentSetName)) {
-            Toast.makeText(this, "已清空", Toast.LENGTH_SHORT).show()
-            loadImages()
-        } else {
-            Toast.makeText(this, "清空失败", Toast.LENGTH_SHORT).show()
+        showProgressDialog("正在清空图片集...", 1, 0)
+        
+        CoroutineScope(Dispatchers.IO).launch {
+            val success = AvatarImageManager.deleteAvatarSet(this@AvatarUploadActivity, currentSetName)
+            
+            withContext(Dispatchers.Main) {
+                dismissProgressDialog()
+                
+                if (success) {
+                    showSuccessDialog("清空成功", "所有图片已删除")
+                    loadImages()
+                } else {
+                    showErrorDialog("清空失败", "删除图片时出错，请重试")
+                }
+            }
         }
     }
     
-    companion object {
-        private const val EXTRA_SET_NAME = "set_name"
-        
-        fun createIntent(activity: Activity, setName: String): Intent {
-            return Intent(activity, AvatarUploadActivity::class.java).apply {
-                putExtra(EXTRA_SET_NAME, setName)
-            }
+    private fun getFileSize(uri: Uri): Long {
+        return try {
+            contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
+                descriptor.statSize
+            } ?: 0L
+        } catch (e: Exception) {
+            0L
         }
+    }
+    
+    private fun showProgressDialog(message: String, total: Int, current: Int) {
+        dismissProgressDialog()
+        progressDialog = ProgressDialog(this).apply {
+            setMessage(message)
+            if (total > 1) {
+                setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+                max = total
+                progress = current
+                setProgressNumberFormat("%1d/%2d")
+            } else {
+                setProgressStyle(ProgressDialog.STYLE_SPINNER)
+            }
+            setCancelable(false)
+            show()
+        }
+    }
+    
+    private fun updateProgressDialog(current: Int) {
+        progressDialog?.progress = current
+    }
+    
+    private fun dismissProgressDialog() {
+        progressDialog?.dismiss()
+        progressDialog = null
+    }
+    
+    private fun showFileSizeErrorDialog(sizeMB: String) {
+        AlertDialog.Builder(this)
+            .setTitle("文件过大")
+            .setMessage("图片大小为 ${sizeMB}MB，超过了 ${MAX_FILE_SIZE_MB}MB 的限制。\n\n请选择较小的图片文件。")
+            .setPositiveButton("确定", null)
+            .show()
+    }
+    
+    private fun showBatchFileSizeErrorDialog(oversizedFiles: List<Pair<Int, String>>, totalCount: Int) {
+        val message = buildString {
+            append("以下图片超过 ${MAX_FILE_SIZE_MB}MB 限制：\n\n")
+            oversizedFiles.forEach { (index, sizeMB) ->
+                append("• 第 $index 张: ${sizeMB}MB\n")
+            }
+            append("\n共 ${oversizedFiles.size}/${totalCount} 张图片超限")
+        }
+        
+        AlertDialog.Builder(this)
+            .setTitle("部分文件过大")
+            .setMessage(message)
+            .setPositiveButton("确定", null)
+            .show()
+    }
+    
+    private fun showSuccessDialog(title: String, message: String) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton("确定", null)
+            .show()
+    }
+    
+    private fun showErrorDialog(title: String, message: String) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton("确定", null)
+            .show()
+    }
+    
+    private fun showResultDialog(title: String, message: String) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton("确定", null)
+            .show()
     }
 }
 
 class AvatarImageAdapter(
+    private val context: Context,
     private val setName: String,
     private val onItemClick: (String) -> Unit,
     private val onDeleteClick: (String) -> Unit
@@ -302,6 +469,12 @@ class AvatarImageAdapter(
     private var imageNames = listOf<String>()
     private var isSelectionMode = false
     private val selectedImages = mutableSetOf<String>()
+    
+    private val glideOptions = com.bumptech.glide.request.RequestOptions()
+        .diskCacheStrategy(com.bumptech.glide.load.engine.DiskCacheStrategy.ALL)
+        .centerCrop()
+        .placeholder(R.drawable.ic_launcher_foreground)
+        .error(R.drawable.ic_launcher_foreground)
     
     fun updateImages(names: List<String>) {
         imageNames = names
@@ -352,21 +525,19 @@ class AvatarImageAdapter(
         private val selectionOverlay: View = view.findViewById(R.id.selectionOverlay)
         
         fun bind(imageName: String) {
-            val bitmap = AvatarImageManager.loadAvatarImage(
-                itemView.context,
-                setName,
-                imageName
-            )
-            imageView.setImageBitmap(bitmap)
+            val dir = AvatarImageManager.getAvatarDirectory(context, setName)
+            val file = File(dir, "$imageName.png")
             
-            // 更新选择状态
+            com.bumptech.glide.Glide.with(context)
+                .load(file)
+                .apply(glideOptions)
+                .into(imageView)
+            
             val isSelected = selectedImages.contains(imageName)
             selectionOverlay.visibility = if (isSelectionMode && isSelected) View.VISIBLE else View.GONE
             
-            // 在选择模式下，删除按钮不可见
             btnDelete.visibility = if (isSelectionMode) View.GONE else View.VISIBLE
             
-            // 点击事件
             itemView.setOnClickListener {
                 onItemClick(imageName)
             }
