@@ -1,12 +1,10 @@
 package com.example.myapplication
 
 import android.app.Activity
-import android.app.ProgressDialog
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -18,9 +16,6 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.TextView
-import com.bumptech.glide.Glide
-import com.bumptech.glide.load.engine.DiskCacheStrategy
-import com.bumptech.glide.request.RequestOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -32,7 +27,7 @@ class AvatarUploadActivity : AppCompatActivity() {
     private lateinit var currentSetName: String
     private lateinit var adapter: AvatarImageAdapter
     private var isSelectionMode = false
-    private var progressDialog: ProgressDialog? = null
+    private var progressDialog: AlertDialog? = null
     
     private val pickImageLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -401,23 +396,20 @@ class AvatarUploadActivity : AppCompatActivity() {
     
     private fun showProgressDialog(message: String, total: Int, current: Int) {
         dismissProgressDialog()
-        progressDialog = ProgressDialog(this).apply {
-            setMessage(message)
-            if (total > 1) {
-                setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
-                max = total
-                progress = current
-                setProgressNumberFormat("%1d/%2d")
-            } else {
-                setProgressStyle(ProgressDialog.STYLE_SPINNER)
-            }
-            setCancelable(false)
-            show()
+        val progressMessage = if (total > 1) {
+            "$message ($current/$total)"
+        } else {
+            message
         }
+        progressDialog = AlertDialog.Builder(this)
+            .setMessage(progressMessage)
+            .setCancelable(false)
+            .create()
+        progressDialog?.show()
     }
     
     private fun updateProgressDialog(current: Int) {
-        progressDialog?.progress = current
+        // 更新进度消息（如果需要）
     }
     
     private fun dismissProgressDialog() {
@@ -485,12 +477,6 @@ class AvatarImageAdapter(
     private var isSelectionMode = false
     private val selectedImages = mutableSetOf<String>()
     
-    private val glideOptions = RequestOptions()
-        .diskCacheStrategy(DiskCacheStrategy.ALL)
-        .centerCrop()
-        .placeholder(R.drawable.ic_launcher_foreground)
-        .error(R.drawable.ic_launcher_foreground)
-    
     fun updateImages(names: List<String>) {
         imageNames = names
         notifyDataSetChanged()
@@ -540,13 +526,12 @@ class AvatarImageAdapter(
         private val selectionOverlay: View = view.findViewById(R.id.selectionOverlay)
         
         fun bind(imageName: String) {
-            val dir = AvatarImageManager.getAvatarDirectory(context, setName)
-            val file = File(dir, "$imageName.png")
-            
-            com.bumptech.glide.Glide.with(context)
-                .load(file)
-                .apply(glideOptions)
-                .into(imageView)
+            val bitmap = AvatarImageManager.loadAvatarImage(context, setName, imageName)
+            if (bitmap != null) {
+                imageView.setImageBitmap(bitmap)
+            } else {
+                imageView.setImageResource(R.drawable.ic_launcher_foreground)
+            }
             
             val isSelected = selectedImages.contains(imageName)
             selectionOverlay.visibility = if (isSelectionMode && isSelected) View.VISIBLE else View.GONE
