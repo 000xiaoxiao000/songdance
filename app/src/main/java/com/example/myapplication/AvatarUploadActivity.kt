@@ -2,6 +2,7 @@ package com.example.myapplication
 
 import android.app.Activity
 import android.app.ProgressDialog
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -17,6 +18,9 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.TextView
+import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
+import com.bumptech.glide.request.RequestOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -470,8 +474,8 @@ class AvatarImageAdapter(
     private var isSelectionMode = false
     private val selectedImages = mutableSetOf<String>()
     
-    private val glideOptions = com.bumptech.glide.request.RequestOptions()
-        .diskCacheStrategy(com.bumptech.glide.load.engine.DiskCacheStrategy.ALL)
+    private val glideOptions = RequestOptions()
+        .diskCacheStrategy(DiskCacheStrategy.ALL)
         .centerCrop()
         .placeholder(R.drawable.ic_launcher_foreground)
         .error(R.drawable.ic_launcher_foreground)
