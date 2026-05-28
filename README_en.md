@@ -23,20 +23,44 @@ An Android application that shows a draggable floating dancing avatar on top of 
 
 ## Project structure
 
-- `app/src/main/java/com/example/myapplication/MainActivity.kt` — Permission flow and main controls.
-- `app/src/main/java/com/example/myapplication/OverlayService.kt` — Foreground service and overlay lifecycle.
-- `app/src/main/java/com/example/myapplication/AudioCaptureManager.kt` — Audio capture loop and source plumbing.
-- `app/src/main/java/com/example/myapplication/BeatDetector.kt` — FFT-based onset / beat event generator.
-- `app/src/main/java/com/example/myapplication/FftAnalyzer.kt` — In-app FFT helper.
-- `app/src/main/java/com/example/myapplication/DancerOverlayView.kt` — Floating overlay container and status UI.
-- `app/src/main/java/com/example/myapplication/OpenGLESAvatarView.kt` — OpenGL ES avatar host with PNG fallback support.
-- `app/src/main/java/com/example/myapplication/OpenGLESMotionController.kt` — Maps beat/audio events to renderer parameters.
-- `app/src/main/java/com/example/myapplication/DancingAvatarView.kt` — Built-in 2D avatar renderer (Canvas fallback) and beat-response logic.
-- `app/src/main/java/com/example/myapplication/SettingsActivity.kt` — Settings UI.
-- `app/src/main/java/com/example/myapplication/OverlaySettings.kt` — Settings model and persistence helpers.
-- `app/src/main/java/com/example/myapplication/BootCompletedReceiver.kt` — Optional boot-start receiver.
-- `app/src/main/java/com/example/myapplication/PowerOptimizationHelper.kt` — Battery optimization helper.
-- `app/src/test/java/com/example/myapplication/BeatDetectorTest.kt` — Unit tests for beat detection.
+### Core Modules
+- `MainActivity.kt` — Permission flow and main controls.
+- `OverlayService.kt` — Foreground service and overlay lifecycle.
+- `DancerOverlayView.kt` — Floating overlay container and status UI.
+
+### Audio Processing
+- `AudioCaptureManager.kt` — Audio capture loop and source plumbing.
+- `BeatDetector.kt` — FFT-based onset / beat event generator.
+- `FftAnalyzer.kt` — In-app FFT helper.
+
+### Avatar Rendering System
+- `OpenGLESView.kt` — OpenGL ES view container.
+- `OpenGLESRenderer.kt` — OpenGL ES renderer main implementation.
+- `OpenGLESRenderer_Legacy.kt` — OpenGL ES renderer legacy version.
+- `OpenGLESMotionController.kt` — Maps beat/audio events to renderer parameters.
+- `OpenGLESFallbackRenderState.kt` — OpenGL ES fallback render state management.
+- `BeatReactiveAvatar.kt` — Beat-reactive avatar logic.
+
+### Avatar Asset Management
+- `AvatarAssets.kt` — Avatar asset definitions.
+- `AvatarLoader.kt` — Avatar loader.
+- `AvatarImageManager.kt` — Avatar image manager.
+- `AvatarImagePagingSource.kt` — Avatar image paging data source.
+- `AvatarImagePagingAdapter.kt` — Avatar image paging adapter.
+- `AvatarUploadActivity.kt` — Avatar upload activity.
+- `ImageCompressor.kt` — Image compression utility.
+
+### Dance Choreography System
+- `AvatarSpriteChoreographyEngine.kt` — Avatar sprite choreography engine.
+- `RhythmStyleEngine.kt` — Rhythm style engine.
+- `SongDanceStyleResolver.kt` — Song dance style resolver.
+- `DanceStyle.kt` — Dance style definitions.
+
+### Settings & Configuration
+- `SettingsActivity.kt` — Settings UI.
+- `OverlaySettings.kt` — Settings model and persistence helpers.
+- `BootCompletedReceiver.kt` — Optional boot-start receiver.
+- `PowerOptimizationHelper.kt` — Battery optimization helper.
 
 ## How to build & run
 

@@ -23,20 +23,44 @@
 
 ## 项目结构
 
-- `app/src/main/java/com/example/myapplication/MainActivity.kt`：权限流程与主控界面。
-- `app/src/main/java/com/example/myapplication/OverlayService.kt`：前台服务与覆盖层生命周期管理。
-- `app/src/main/java/com/example/myapplication/AudioCaptureManager.kt`：音频捕获循环与源适配。
-- `app/src/main/java/com/example/myapplication/BeatDetector.kt`：基于 FFT 的 onset / 节拍事件生成器。
-- `app/src/main/java/com/example/myapplication/FftAnalyzer.kt`：内置 FFT 辅助实现。
-- `app/src/main/java/com/example/myapplication/DancerOverlayView.kt`：悬浮覆盖层容器与状态 UI。
-- `app/src/main/java/com/example/myapplication/OpenGLESAvatarView.kt`：OpenGL ES 头像宿主，带 PNG 回退支持。
-- `app/src/main/java/com/example/myapplication/OpenGLESMotionController.kt`：将节拍/音频事件映射到渲染参数的控制器。
-- `app/src/main/java/com/example/myapplication/DancingAvatarView.kt`：内置 2D 角色渲染（Canvas 回退）与节拍响应逻辑。
-- `app/src/main/java/com/example/myapplication/SettingsActivity.kt`：设置界面。
-- `app/src/main/java/com/example/myapplication/OverlaySettings.kt`：设置模型与持久化。
-- `app/src/main/java/com/example/myapplication/BootCompletedReceiver.kt`：可选开机自启接收器。
-- `app/src/main/java/com/example/myapplication/PowerOptimizationHelper.kt`：电池优化帮助器。
-- `app/src/test/java/com/example/myapplication/BeatDetectorTest.kt`：节拍检测的单元测试。
+### 核心模块
+- `MainActivity.kt`：权限流程与主控界面。
+- `OverlayService.kt`：前台服务与覆盖层生命周期管理。
+- `DancerOverlayView.kt`：悬浮覆盖层容器与状态 UI。
+
+### 音频处理
+- `AudioCaptureManager.kt`：音频捕获循环与源适配。
+- `BeatDetector.kt`：基于 FFT 的 onset / 节拍事件生成器。
+- `FftAnalyzer.kt`：内置 FFT 辅助实现。
+
+### 头像渲染系统
+- `OpenGLESView.kt`：OpenGL ES 视图容器。
+- `OpenGLESRenderer.kt`：OpenGL ES 渲染器主实现。
+- `OpenGLESRenderer_Legacy.kt`：OpenGL ES 渲染器遗留版本。
+- `OpenGLESMotionController.kt`：将节拍/音频事件映射到渲染参数的控制器。
+- `OpenGLESFallbackRenderState.kt`：OpenGL ES 回退渲染状态管理。
+- `BeatReactiveAvatar.kt`：节拍响应头像逻辑。
+
+### 头像资源管理
+- `AvatarAssets.kt`：头像资源定义。
+- `AvatarLoader.kt`：头像加载器。
+- `AvatarImageManager.kt`：头像图片管理器。
+- `AvatarImagePagingSource.kt`：头像图片分页数据源。
+- `AvatarImagePagingAdapter.kt`：头像图片分页适配器。
+- `AvatarUploadActivity.kt`：头像上传界面。
+- `ImageCompressor.kt`：图片压缩工具。
+
+### 舞蹈编排系统
+- `AvatarSpriteChoreographyEngine.kt`：头像精灵编排引擎。
+- `RhythmStyleEngine.kt`：节奏风格引擎。
+- `SongDanceStyleResolver.kt`：歌曲舞蹈风格解析器。
+- `DanceStyle.kt`：舞蹈风格定义。
+
+### 设置与配置
+- `SettingsActivity.kt`：设置界面。
+- `OverlaySettings.kt`：设置模型与持久化。
+- `BootCompletedReceiver.kt`：可选开机自启接收器。
+- `PowerOptimizationHelper.kt`：电池优化帮助器。
 
 ## 运行方法
 
