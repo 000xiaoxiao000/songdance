@@ -243,6 +243,11 @@ class OverlayService : Service(), AudioCaptureManager.Listener {
     // 重新加载设置并应用到悬浮窗
     private fun reloadSettings() {
         currentSettings = settingsRepository.get()
+        // 清除缓存以确保加载最新的图片
+        AvatarLoader.clearCacheForDirectory(currentSettings.avatarDir)
+        if (currentSettings.avatarVariantDir != currentSettings.avatarDir) {
+            AvatarLoader.clearCacheForDirectory(currentSettings.avatarVariantDir)
+        }
         preloadAvatarResources(currentSettings)
         overlayView?.applySettings(currentSettings)
     }

@@ -179,6 +179,7 @@ class AvatarUploadActivity : AppCompatActivity() {
                 dismissProgressDialog()
                 
                 if (success) {
+                    AvatarLoader.clearCacheForDirectory(currentSetName)
                     showSuccessDialog("上传成功", "图片已成功添加到图片集")
                     loadImages()
                 } else {
@@ -235,6 +236,10 @@ class AvatarUploadActivity : AppCompatActivity() {
             
             withContext(Dispatchers.Main) {
                 dismissProgressDialog()
+                
+                if (successCount > 0) {
+                    AvatarLoader.clearCacheForDirectory(currentSetName)
+                }
                 
                 val message = buildString {
                     append("批量上传完成\n\n")
@@ -300,6 +305,10 @@ class AvatarUploadActivity : AppCompatActivity() {
             withContext(Dispatchers.Main) {
                 dismissProgressDialog()
                 
+                if (successCount > 0) {
+                    AvatarLoader.clearCacheForDirectory(currentSetName)
+                }
+                
                 val message = buildString {
                     append("批量删除完成\n\n")
                     append("✓ 成功: $successCount 张")
@@ -339,6 +348,7 @@ class AvatarUploadActivity : AppCompatActivity() {
                 dismissProgressDialog()
                 
                 if (success) {
+                    AvatarLoader.clearCacheForDirectory(currentSetName)
                     showSuccessDialog("删除成功", "图片已从图片集中移除")
                     loadImages()
                 } else {
@@ -369,6 +379,7 @@ class AvatarUploadActivity : AppCompatActivity() {
                 dismissProgressDialog()
                 
                 if (success) {
+                    AvatarLoader.clearCacheForDirectory(currentSetName)
                     showSuccessDialog("清空成功", "所有图片已删除")
                     loadImages()
                 } else {

@@ -77,6 +77,52 @@ object AvatarLoader {
     }
 
     /**
+     * 清除指定目录的所有缓存
+     * 当用户上传新图片后需要调用此方法
+     */
+    fun clearCacheForDirectory(dir: String) {
+        val normalizedDir = dir.trim().trim('/')
+        synchronized(spriteSetCacheLock) {
+            // 清除资源集缓存
+            val keysToRemove = mutableListOf<String>()
+            val snapshot = spriteSetCache.snapshot()
+            for (key in snapshot.keys) {
+                if (key.startsWith("sprite_set::$normalizedDir")) {
+                    keysToRemove.add(key)
+                }
+            }
+            keysToRemove.forEach { spriteSetCache.remove(it) }
+            
+            // 清除正在加载的任务
+            val inflightKeysToRemove = spriteSetInFlight.keys.filter { 
+                it.startsWith("sprite_set::$normalizedDir")
+            }
+            inflightKeysToRemove.forEach { spriteSetInFlight.remove(it) }
+        }
+        
+        // 清除单个精灵缓存
+        val processedSnapshot = processedCache.snapshot()
+        val processedKeysToRemove = processedSnapshot.keys.filter { key ->
+            key.startsWith("sprite::$normalizedDir/") || key == "sprite::$normalizedDir"
+        }
+        processedKeysToRemove.forEach { processedCache.remove(it) }
+        
+        android.util.Log.d(TAG, "已清除目录缓存: $normalizedDir")
+    }
+
+    /**
+     * 清除所有缓存
+     */
+    fun clearAllCache() {
+        synchronized(spriteSetCacheLock) {
+            spriteSetCache.evictAll()
+            spriteSetInFlight.clear()
+        }
+        processedCache.evictAll()
+        android.util.Log.d(TAG, "已清除所有缓存")
+    }
+
+    /**
      * 统一加载入口：
      * 1. 优先从用户上传的自定义图片目录加载
      * 2. 兼容尝试扁平化 drawable 资源名
