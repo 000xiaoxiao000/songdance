@@ -48,6 +48,7 @@ class SettingsActivity : AppCompatActivity() {
             bindCurrentValues(current)
             adjustBootPreferenceIfNeeded()
             bindSavers()
+            bindUploadButtons()
         }
 
         private fun adjustBootPreferenceIfNeeded() {
@@ -90,14 +91,26 @@ class SettingsActivity : AppCompatActivity() {
             findPreference<SwitchPreferenceCompat>(KEY_SHOW_MODE)?.onPreferenceChangeListener = listener
             findPreference<SwitchPreferenceCompat>(KEY_LOCK)?.onPreferenceChangeListener = listener
             findPreference<SwitchPreferenceCompat>(KEY_BOOT)?.onPreferenceChangeListener = listener
-            // 新增偏好设置的变更监听器
             findPreference<SeekBarPreference>(KEY_AVATAR_ANCHOR)?.onPreferenceChangeListener = listener
             findPreference<SeekBarPreference>(KEY_AUDIO_THRESHOLD)?.onPreferenceChangeListener = listener
             findPreference<SeekBarPreference>(KEY_AUDIO_INACTIVITY)?.onPreferenceChangeListener = listener
             findPreference<SwitchPreferenceCompat>(KEY_USE_AVATAR1)?.onPreferenceChangeListener = listener
             findPreference<androidx.preference.EditTextPreference>(KEY_AVATAR_DIR)?.onPreferenceChangeListener = listener
             findPreference<androidx.preference.EditTextPreference>(KEY_AVATAR_VARIANT_DIR)?.onPreferenceChangeListener = listener
-
+        }
+        
+        private fun bindUploadButtons() {
+            findPreference<Preference>("pref_upload_avatar_set1")?.setOnPreferenceClickListener {
+                val intent = AvatarUploadActivity.createIntent(requireActivity(), AvatarAssets.DIR_CUSTOM_SET_1)
+                startActivity(intent)
+                true
+            }
+            
+            findPreference<Preference>("pref_upload_avatar_set2")?.setOnPreferenceClickListener {
+                val intent = AvatarUploadActivity.createIntent(requireActivity(), AvatarAssets.DIR_CUSTOM_SET_2)
+                startActivity(intent)
+                true
+            }
         }
 
         private fun notifySettingsChanged() {

@@ -6,6 +6,16 @@
     <PreferenceCategory
         app:title="@string/pref_category_appearance_title">
 
+        <Preference
+            app:key="pref_upload_avatar_set1"
+            app:title="管理图片集 1"
+            app:summary="上传和管理第一套小人图片" />
+
+        <Preference
+            app:key="pref_upload_avatar_set2"
+            app:title="管理图片集 2"
+            app:summary="上传和管理第二套小人图片" />
+
         <SeekBarPreference
             app:key="pref_avatar_size"
             app:title="@string/pref_avatar_size_title"

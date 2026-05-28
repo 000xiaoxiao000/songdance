@@ -78,17 +78,14 @@ object AvatarLoader {
 
     /**
      * 统一加载入口：
-     * 1. 优先读取由 `res/drawable/avatar*` 暴露出来的原始文件路径；
-     * 2. 再兼容尝试扁平化 drawable 资源名（如 `avatar_dancer_single_begin`）。
-     *
-     * 说明：业务上图片来源已经迁移到 `drawable/avatar`、`drawable/avatar1`，
-     * 不再依赖旧的 `src/main/assets/avatar*` 目录；这里只是复用打包后的文件读取能力。
+     * 1. 优先从用户上传的自定义图片目录加载
+     * 2. 兼容尝试扁平化 drawable 资源名
      */
     private fun loadAvatarBitmap(context: Context, dir: String, baseName: String): Bitmap? {
         val request = SpriteRequest(dir = dir, baseName = baseName)
         processedCache.get(request.cacheKey)?.takeIf { !it.isRecycled }?.let { return it }
 
-        val decoded = decodeFromDrawableSubdir(context, request)
+        val decoded = decodeFromCustomStorage(context, request)
             ?: decodeFromDrawableResource(context, request)
 
         if (decoded == null) {
@@ -107,41 +104,20 @@ object AvatarLoader {
         }
     }
 
-    // 主路径：读取构建后可通过 avatar/...、avatar1/... 访问到的原始图片文件。
-    private fun decodeFromDrawableSubdir(context: Context, request: SpriteRequest): Bitmap? {
-        val assets = context.assets
-        val basePath = if (request.normalizedDir.isEmpty()) {
-            request.baseName
-        } else {
-            "${request.normalizedDir}/${request.baseName}"
+    // 主路径：从用户上传的自定义图片目录加载
+    private fun decodeFromCustomStorage(context: Context, request: SpriteRequest): Bitmap? {
+        val bitmap = AvatarImageManager.loadAvatarImage(
+            context = context,
+            setName = request.normalizedDir,
+            imageName = request.baseName
+        )
+        
+        if (bitmap != null) {
+            android.util.Log.d(TAG, "从自定义存储加载成功: ${request.normalizedDir}/${request.baseName}")
+            return bitmap
         }
-
-        for (ext in preferredExtensions) {
-            val assetPath = "$basePath.$ext"
-            val bitmap = decodeBitmapFromAssetPath(assets, assetPath)
-            if (bitmap != null) {
-                android.util.Log.d(TAG, "从 drawable 子目录加载成功: $assetPath")
-                return bitmap
-            }
-        }
-
+        
         return null
-    }
-
-    private fun decodeBitmapFromAssetPath(
-        assetManager: android.content.res.AssetManager,
-        assetPath: String,
-    ): Bitmap? {
-        return try {
-            assetManager.open(assetPath).use { input ->
-                BitmapFactory.decodeStream(input, null, BitmapFactory.Options().apply {
-                    inPreferredConfig = Bitmap.Config.ARGB_8888
-                    inMutable = true
-                })
-            }
-        } catch (_: Exception) {
-            null
-        }
     }
 
     // 兼容兜底：若未来资源被扁平化到 drawable 根目录，则继续支持按资源名查找。

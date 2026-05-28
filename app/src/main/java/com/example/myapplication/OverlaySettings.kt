@@ -14,8 +14,8 @@ data class OverlaySettings(
     val lockPosition: Boolean,
     val autoStartOnBoot: Boolean,
     val useAvatarVariant1: Boolean = false,
-    val avatarDir: String = AvatarAssets.DIR_AVATAR,
-    val avatarVariantDir: String = AvatarAssets.DIR_AVATAR1,
+    val avatarDir: String = AvatarAssets.DIR_CUSTOM_SET_1,
+    val avatarVariantDir: String = AvatarAssets.DIR_CUSTOM_SET_2,
     val avatarAnchorOffsetPercent: Float = 0f,
     val audioActivityThreshold: Float = 0.05f,
     val audioInactivityTimeoutMs: Int = 1500,
@@ -222,8 +222,8 @@ class OverlaySettingsRepository(context: Context) {
         private const val DEFAULT_ALPHA = 0.92f
         private const val DEFAULT_AUDIO_THRESHOLD = 0.05f
         private const val DEFAULT_AUDIO_INACTIVITY_TIMEOUT_MS = 1500
-        private const val DEFAULT_AVATAR_DIR = AvatarAssets.DIR_AVATAR
-        private const val DEFAULT_AVATAR_VARIANT_DIR = AvatarAssets.DIR_AVATAR1
+        private const val DEFAULT_AVATAR_DIR = AvatarAssets.DIR_CUSTOM_SET_1
+        private const val DEFAULT_AVATAR_VARIANT_DIR = AvatarAssets.DIR_CUSTOM_SET_2
 
         private val SENSITIVITY_PERCENT_RANGE = 60..200
         private val SCALE_PERCENT_RANGE = 70..180
