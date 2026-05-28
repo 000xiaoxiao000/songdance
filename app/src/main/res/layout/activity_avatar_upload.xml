@@ -27,7 +27,25 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="添加图片"
-            android:layout_marginEnd="8dp" />
+            android:layout_marginEnd="4dp" />
+
+        <Button
+            android:id="@+id/btnAddMultiple"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="批量添加"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp" />
+
+        <Button
+            android:id="@+id/btnBatchDelete"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="批量删除"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp" />
 
         <Button
             android:id="@+id/btnClearAll"
@@ -35,7 +53,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="清空全部"
-            android:layout_marginStart="8dp" />
+            android:layout_marginStart="4dp" />
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
