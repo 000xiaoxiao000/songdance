@@ -19,11 +19,6 @@ import kotlinx.coroutines.launch
  * - 读取单帧序列、begin 图、end 图和分层部件图
  * - 对原图做去背景、裁掉透明边、统一输出尺寸
  * - 通过内存缓存避免重复解码与重复预处理
- *
- * 资源约定：
- * - 图片权威来源：`res/drawable/avatar`、`res/drawable/avatar1`
- * - 运行时主读取方式：通过构建阶段暴露出来的 `avatar/...`、`avatar1/...` 原始文件路径读取
- * - 兼容兜底方式：尝试读取扁平化的 drawable 名称，例如 `avatar_dancer_single_begin`
  */
 object AvatarLoader {
     private const val TAG = "AvatarLoader"
@@ -92,21 +87,21 @@ object AvatarLoader {
                 }
             }
             keysToRemove.forEach { spriteSetCache.remove(it) }
-            
+
             // 清除正在加载的任务
-            val inflightKeysToRemove = spriteSetInFlight.keys.filter { 
+            val inflightKeysToRemove = spriteSetInFlight.keys.filter {
                 it.startsWith("sprite_set::$normalizedDir")
             }
             inflightKeysToRemove.forEach { spriteSetInFlight.remove(it) }
         }
-        
+
         // 清除单个精灵缓存
         val processedSnapshot = processedCache.snapshot()
         val processedKeysToRemove = processedSnapshot.keys.filter { key ->
             key.startsWith("sprite::$normalizedDir/") || key == "sprite::$normalizedDir"
         }
         processedKeysToRemove.forEach { processedCache.remove(it) }
-        
+
         android.util.Log.d(TAG, "已清除目录缓存: $normalizedDir")
     }
 
@@ -157,12 +152,12 @@ object AvatarLoader {
             setName = request.normalizedDir,
             imageName = request.baseName
         )
-        
+
         if (bitmap != null) {
             android.util.Log.d(TAG, "从自定义存储加载成功: ${request.normalizedDir}/${request.baseName}")
             return bitmap
         }
-        
+
         return null
     }
 

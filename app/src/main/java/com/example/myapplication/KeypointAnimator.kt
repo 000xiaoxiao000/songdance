@@ -28,7 +28,7 @@ class KeypointAnimator {
         val sequence = mutableListOf<AnimatedPose>()
         
         for (i in 0 until frameCount) {
-            val progress = i.toFloat() / frameCount
+            val progress = if (frameCount <= 1) 0f else i.toFloat() / (frameCount - 1)
             val animatedKeypoints = animateKeypoints(basePose, progress, danceStyle)
             sequence.add(AnimatedPose(animatedKeypoints, progress))
         }
@@ -65,7 +65,7 @@ class KeypointAnimator {
     private fun animatePower(pose: PoseDetector.Pose, progress: Float, scale: Float): List<PointF> {
         val animatedPoints = mutableListOf<PointF>()
         val cycle = progress * 4 * PI.toFloat()
-        val amplification = 0.45f
+        val amplification = 0.9f
         
         pose.keypoints.forEachIndexed { index, keypoint ->
             val basePoint = keypoint.position
@@ -116,7 +116,7 @@ class KeypointAnimator {
     private fun animateChill(pose: PoseDetector.Pose, progress: Float, scale: Float): List<PointF> {
         val animatedPoints = mutableListOf<PointF>()
         val cycle = progress * 2 * PI.toFloat()
-        val amplification = 0.4f
+        val amplification = 0.7f
         
         pose.keypoints.forEachIndexed { index, keypoint ->
             val basePoint = keypoint.position
@@ -164,7 +164,7 @@ class KeypointAnimator {
         val beat = (progress * 8).toInt()
         val beatProgress = (progress * 8) - beat
         val isOnBeat = beatProgress < 0.25f
-        val amplification = 0.5f
+        val amplification = 0.9f
         
         pose.keypoints.forEachIndexed { index, keypoint ->
             val basePoint = keypoint.position

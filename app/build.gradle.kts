@@ -50,12 +50,6 @@ android {
 
     sourceSets {
         getByName("main") {
-            // 当前悬浮小人图片的权威来源位于：
-            // - src/main/res/drawable/avatar
-            // - src/main/res/drawable/avatar1
-            // 旧的 src/main/assets/avatar* 已不再使用。
-            // 这里额外把 res/drawable 暴露到 assets 读取路径，仅用于让 AvatarLoader
-            // 可以按 avatar/...、avatar1/... 的原始文件路径读取图片。
             assets.srcDirs("src/main/assets", "src/main/res/drawable")
         }
     }
@@ -72,21 +66,21 @@ dependencies {
     implementation(libs.glide)
     implementation(libs.androidx.paging.runtime)
     implementation(libs.androidx.exifinterface)
-    
+
     // TensorFlow Lite for AI model inference
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
-    
+
     // MediaPipe for pose detection
     implementation("com.google.mediapipe:tasks-vision:0.10.8")
-    
+
     // Coroutines for async processing
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-    
+
     // Lifecycle components for lifecycleScope
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

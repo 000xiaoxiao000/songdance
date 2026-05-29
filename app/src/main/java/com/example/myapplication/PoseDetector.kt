@@ -20,6 +20,8 @@ class PoseDetector(private val context: Context) {
     
     private var interpreter: Interpreter? = null
     private var inputSize = 192
+    val isUsingLocalModel: Boolean
+        get() = interpreter != null
     
     companion object {
         private const val TAG = "PoseDetector"
@@ -83,10 +85,10 @@ class PoseDetector(private val context: Context) {
             try {
                 val modelBuffer = FileUtil.loadMappedFile(context, MODEL_PATH)
                 interpreter = Interpreter(modelBuffer, options)
-                Log.d(TAG, "姿态检测模型初始化成功")
+                Log.d(TAG, "本地姿态大模型初始化成功: $MODEL_PATH")
                 true
             } catch (e: Exception) {
-                Log.w(TAG, "无法加载模型文件，使用简化检测", e)
+                Log.w(TAG, "无法加载本地姿态模型，使用简化检测", e)
                 false
             }
         } catch (e: Exception) {

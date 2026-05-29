@@ -546,9 +546,10 @@ class AvatarUploadActivity : AppCompatActivity() {
             
             result.onSuccess { frameCount ->
                 AvatarLoader.clearCacheForDirectory(currentSetName)
+                val modelMode = if (aiModelManager.isUsingLocalModel) "本地 MoveNet 模型" else "简化姿态模型"
                 showSuccessDialog(
                     "生成成功",
-                    "AI 已成功生成 $frameCount 帧唱跳动作图片\n\n图片已保存到当前图片集"
+                    "已使用${modelMode}生成 $frameCount 帧连贯唱跳动作图片\n\n图片已保存到当前图片集"
                 )
                 loadImages()
             }.onFailure { error ->
