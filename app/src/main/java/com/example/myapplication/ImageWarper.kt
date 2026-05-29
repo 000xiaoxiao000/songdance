@@ -22,7 +22,7 @@ class ImageWarper {
 
     companion object {
         private const val TAG = "ImageWarper"
-        private const val ENABLE_ARTICULATED_OVERLAYS = false
+        private const val ENABLE_ARTICULATED_OVERLAYS = true
     }
 
     private data class BodySegment(
@@ -186,21 +186,22 @@ class ImageWarper {
         val cycle = frameProgress.coerceIn(0f, 1f) * 2f * PI.toFloat()
         val poseDx = animatedCenter.x - originalCenter.x
         val poseDy = animatedCenter.y - originalCenter.y
-        val danceSway = sin(cycle * 2f) * width * 0.20f
-        val danceBounce = -kotlin.math.abs(sin(cycle * 4f)) * height * 0.12f
-        val shoulderPulse = cos(cycle * 2f) * height * 0.04f
-        val dx = (poseDx * 1.8f + danceSway).coerceIn(-width * 0.26f, width * 0.26f)
-        val dy = (poseDy * 1.6f + danceBounce + shoulderPulse).coerceIn(-height * 0.20f, height * 0.12f)
+        val danceSway = sin(cycle * 2f) * width * 0.11f + sin(cycle * 5f) * width * 0.035f
+        val danceBounce = -kotlin.math.abs(sin(cycle * 4f)) * height * 0.075f
+        val shoulderPulse = cos(cycle * 2f) * height * 0.045f
+        val dx = (poseDx * 1.45f + danceSway).coerceIn(-width * 0.18f, width * 0.18f)
+        val dy = (poseDy * 1.35f + danceBounce + shoulderPulse).coerceIn(-height * 0.13f, height * 0.10f)
 
         val poseRotation = calculateShoulderRotation(originalKeypoints, animatedKeypoints)
-        val danceRotation = sin(cycle * 2f) * 16f + sin(cycle * 4f) * 5f
-        val rotation = (poseRotation * 2.2f + danceRotation).coerceIn(-24f, 24f)
-        val scale = 0.78f + kotlin.math.abs(sin(cycle * 4f)) * 0.10f
-        val skew = sin(cycle * 3f) * 0.055f
+        val danceRotation = sin(cycle * 2f) * 22f + sin(cycle * 4f) * 9f
+        val rotation = (poseRotation * 2.8f + danceRotation).coerceIn(-34f, 34f)
+        val scaleX = 0.74f + kotlin.math.abs(sin(cycle * 4f)) * 0.12f
+        val scaleY = 0.78f + kotlin.math.abs(cos(cycle * 4f)) * 0.13f
+        val skew = sin(cycle * 3f) * 0.13f
 
         val matrix = Matrix().apply {
             postTranslate(-originalCenter.x, -originalCenter.y)
-            postScale(scale, scale)
+            postScale(scaleX, scaleY)
             postSkew(skew, 0f)
             postRotate(rotation)
             postTranslate(originalCenter.x + dx, originalCenter.y + dy)
@@ -214,6 +215,14 @@ class ImageWarper {
                 sourceBitmap = layers.foreground,
                 originalKeypoints = originalKeypoints,
                 animatedKeypoints = animatedKeypoints,
+                width = width.toFloat(),
+                height = height.toFloat()
+            )
+            drawSpriteDanceAccents(
+                canvas = canvas,
+                sourceBitmap = layers.foreground,
+                bounds = layers.foregroundBounds,
+                frameProgress = frameProgress,
                 width = width.toFloat(),
                 height = height.toFloat()
             )
@@ -344,17 +353,17 @@ class ImageWarper {
         height: Float
     ) {
         val segments = listOf(
-            BodySegment(5, 7, 0.36f, 14f, 185),
-            BodySegment(7, 9, 0.42f, 18f, 195),
-            BodySegment(6, 8, 0.36f, 14f, 185),
-            BodySegment(8, 10, 0.42f, 18f, 195),
-            BodySegment(11, 13, 0.34f, 10f, 175),
-            BodySegment(13, 15, 0.36f, 12f, 185),
-            BodySegment(12, 14, 0.34f, 10f, 175),
-            BodySegment(14, 16, 0.36f, 12f, 185),
-            BodySegment(5, 6, 0.50f, 6f, 165),
-            BodySegment(0, 5, 0.48f, 8f, 170),
-            BodySegment(0, 6, 0.48f, 8f, 170)
+            BodySegment(5, 7, 0.54f, 42f, 235),
+            BodySegment(7, 9, 0.62f, 58f, 245),
+            BodySegment(6, 8, 0.54f, 42f, 235),
+            BodySegment(8, 10, 0.62f, 58f, 245),
+            BodySegment(11, 13, 0.48f, 34f, 220),
+            BodySegment(13, 15, 0.54f, 48f, 235),
+            BodySegment(12, 14, 0.48f, 34f, 220),
+            BodySegment(14, 16, 0.54f, 48f, 235),
+            BodySegment(5, 6, 0.62f, 22f, 205),
+            BodySegment(0, 5, 0.56f, 24f, 215),
+            BodySegment(0, 6, 0.56f, 24f, 215)
         )
 
         segments.forEach { segment ->
@@ -388,9 +397,9 @@ class ImageWarper {
 
         val originalLength = distance(originalStart, originalEnd).coerceAtLeast(minOf(width, height) * 0.08f)
         val targetLength = distance(targetStart, targetEnd).coerceAtLeast(originalLength * 0.75f)
-        val scale = (targetLength / originalLength).coerceIn(0.92f, 1.08f)
-        val dx = (targetMid.x - originalMid.x).coerceIn(-width * 0.075f, width * 0.075f)
-        val dy = (targetMid.y - originalMid.y).coerceIn(-height * 0.075f, height * 0.075f)
+        val scale = (targetLength / originalLength).coerceIn(0.82f, 1.22f)
+        val dx = (targetMid.x - originalMid.x).coerceIn(-width * 0.20f, width * 0.20f)
+        val dy = (targetMid.y - originalMid.y).coerceIn(-height * 0.18f, height * 0.18f)
         val rotation = angleDelta(originalStart, originalEnd, targetStart, targetEnd)
             .coerceIn(-segment.maxRotationDegrees, segment.maxRotationDegrees)
 
@@ -417,6 +426,140 @@ class ImageWarper {
         canvas.save()
         canvas.clipPath(clipPath)
         canvas.drawBitmap(sourceBitmap, matrix, paint)
+        canvas.restore()
+    }
+
+
+    private fun drawSpriteDanceAccents(
+        canvas: Canvas,
+        sourceBitmap: Bitmap,
+        bounds: RectF,
+        frameProgress: Float,
+        width: Float,
+        height: Float
+    ) {
+        if (bounds.width() <= 1f || bounds.height() <= 1f) return
+        val cycle = frameProgress.coerceIn(0f, 1f) * 2f * PI.toFloat()
+        val turn = sin(cycle * 2f)
+        val hop = kotlin.math.abs(sin(cycle * 4f))
+        val wave = sin(cycle * 3f)
+        val bodyHeight = bounds.height()
+        val bodyWidth = bounds.width()
+        val centerX = bounds.centerX()
+        val top = bounds.top
+        val bottom = bounds.bottom
+
+        val hairAndHead = RectF(
+            centerX - bodyWidth * 0.50f,
+            top,
+            centerX + bodyWidth * 0.58f,
+            top + bodyHeight * 0.40f
+        )
+        val leftSleeve = RectF(
+            bounds.left - bodyWidth * 0.06f,
+            top + bodyHeight * 0.28f,
+            centerX + bodyWidth * 0.05f,
+            top + bodyHeight * 0.66f
+        )
+        val rightSleeve = RectF(
+            centerX - bodyWidth * 0.05f,
+            top + bodyHeight * 0.28f,
+            bounds.right + bodyWidth * 0.06f,
+            top + bodyHeight * 0.66f
+        )
+        val leftLeg = RectF(
+            bounds.left + bodyWidth * 0.18f,
+            top + bodyHeight * 0.58f,
+            centerX + bodyWidth * 0.08f,
+            bottom
+        )
+        val rightLeg = RectF(
+            centerX - bodyWidth * 0.08f,
+            top + bodyHeight * 0.58f,
+            bounds.right - bodyWidth * 0.10f,
+            bottom
+        )
+        drawClippedMotionPart(
+            canvas,
+            sourceBitmap,
+            hairAndHead,
+            PointF(centerX, top + bodyHeight * 0.25f),
+            dx = turn * width * 0.025f,
+            dy = -hop * height * 0.025f,
+            rotation = turn * 18f,
+            scale = 1f + hop * 0.05f,
+            alpha = 238
+        )
+        drawClippedMotionPart(
+            canvas,
+            sourceBitmap,
+            leftSleeve,
+            PointF(centerX - bodyWidth * 0.18f, top + bodyHeight * 0.35f),
+            dx = -kotlin.math.abs(wave) * width * 0.15f,
+            dy = -kotlin.math.abs(turn) * height * 0.13f,
+            rotation = -34f - turn * 28f,
+            scale = 1.06f,
+            alpha = 242
+        )
+        drawClippedMotionPart(
+            canvas,
+            sourceBitmap,
+            rightSleeve,
+            PointF(centerX + bodyWidth * 0.18f, top + bodyHeight * 0.35f),
+            dx = kotlin.math.abs(turn) * width * 0.15f,
+            dy = -kotlin.math.abs(wave) * height * 0.13f,
+            rotation = 34f - wave * 28f,
+            scale = 1.06f,
+            alpha = 242
+        )
+        drawClippedMotionPart(
+            canvas,
+            sourceBitmap,
+            leftLeg,
+            PointF(centerX - bodyWidth * 0.12f, top + bodyHeight * 0.68f),
+            dx = -kotlin.math.abs(turn) * width * 0.12f,
+            dy = -kotlin.math.abs(wave) * height * 0.07f,
+            rotation = -22f - wave * 24f,
+            scale = 1.04f,
+            alpha = 238
+        )
+        drawClippedMotionPart(
+            canvas,
+            sourceBitmap,
+            rightLeg,
+            PointF(centerX + bodyWidth * 0.12f, top + bodyHeight * 0.68f),
+            dx = kotlin.math.abs(wave) * width * 0.12f,
+            dy = -kotlin.math.abs(turn) * height * 0.07f,
+            rotation = 22f - turn * 24f,
+            scale = 1.04f,
+            alpha = 238
+        )
+    }
+
+    private fun drawClippedMotionPart(
+        canvas: Canvas,
+        sourceBitmap: Bitmap,
+        sourceRect: RectF,
+        pivot: PointF,
+        dx: Float,
+        dy: Float,
+        rotation: Float,
+        scale: Float,
+        alpha: Int
+    ) {
+        val matrix = Matrix().apply {
+            postTranslate(-pivot.x, -pivot.y)
+            postScale(scale, scale)
+            postRotate(rotation)
+            postTranslate(pivot.x + dx, pivot.y + dy)
+        }
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG).apply {
+            this.alpha = alpha
+        }
+        canvas.save()
+        canvas.concat(matrix)
+        canvas.clipRect(sourceRect)
+        canvas.drawBitmap(sourceBitmap, 0f, 0f, paint)
         canvas.restore()
     }
 

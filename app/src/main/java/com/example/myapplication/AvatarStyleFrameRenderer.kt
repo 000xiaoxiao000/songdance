@@ -10,7 +10,6 @@ import android.graphics.PointF
  */
 class AvatarStyleFrameRenderer(private val context: Context) {
 
-    private val arbitraryStyleTransferModel = LocalArbitraryStyleTransferModel(context)
     private val localImageToImageModel = LocalImageToImageModel(context)
     private val keypointAnimator = KeypointAnimator()
     private val imageWarper = ImageWarper()
@@ -20,9 +19,7 @@ class AvatarStyleFrameRenderer(private val context: Context) {
         detectedPose: PoseDetector.Pose,
         frameCount: Int
     ): List<Bitmap> {
-        val stylizedBase = arbitraryStyleTransferModel.stylize(sourceBitmap)
-            ?: localImageToImageModel.stylize(sourceBitmap)
-            ?: return emptyList()
+        val stylizedBase = localImageToImageModel.stylize(sourceBitmap) ?: return emptyList()
 
         val scaledPose = scalePose(
             pose = detectedPose,
@@ -38,16 +35,12 @@ class AvatarStyleFrameRenderer(private val context: Context) {
         )
         val frames = ArrayList<Bitmap>(frameCount)
         animatedSequence.forEachIndexed { index, animatedPose ->
-            val frame = if (index == 0) {
-                stylizedBase.copy(Bitmap.Config.ARGB_8888, false)
-            } else {
-                imageWarper.createFrameWithPose(
-                    sourceBitmap = stylizedBase,
-                    animatedKeypoints = animatedPose.keypoints,
-                    originalPose = scaledPose,
-                    frameProgress = animatedPose.timestamp
-                )
-            }
+            val frame = imageWarper.createFrameWithPose(
+                sourceBitmap = stylizedBase,
+                animatedKeypoints = animatedPose.keypoints,
+                originalPose = scaledPose,
+                frameProgress = animatedPose.timestamp
+            )
             frames.add(frame)
         }
         stylizedBase.recycle()
@@ -55,7 +48,6 @@ class AvatarStyleFrameRenderer(private val context: Context) {
     }
 
     fun release() {
-        arbitraryStyleTransferModel.release()
         localImageToImageModel.release()
     }
 

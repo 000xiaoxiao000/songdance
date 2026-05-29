@@ -33,7 +33,7 @@ class KeypointAnimator {
             sequence.add(AnimatedPose(animatedKeypoints, progress))
         }
         
-        return smoothSequence(sequence, windowSize = 5)
+        return smoothSequence(sequence, windowSize = 3)
     }
     
     private fun animateKeypoints(
@@ -63,60 +63,76 @@ class KeypointAnimator {
     }
     
     private fun animatePower(pose: PoseDetector.Pose, progress: Float, scale: Float): List<PointF> {
-        val animatedPoints = mutableListOf<PointF>()
-        val cycle = progress * 4 * PI.toFloat()
-        val amplification = 0.9f
-        
-        pose.keypoints.forEachIndexed { index, keypoint ->
+        val cycle = progress * 2f * PI.toFloat()
+        val phase = (progress * 4f).toInt() % 4
+        val beat = sin(cycle * 4f)
+        val lift = kotlin.math.abs(sin(cycle * 2f))
+        val side = if (phase == 0 || phase == 3) -1f else 1f
+        val amplification = 1.85f
+        val bodyLean = sin(cycle) * 42f * scale * amplification
+        val bodyDrop = lift * 34f * scale * amplification
+        val armReach = 96f * scale * amplification
+        val armHigh = 112f * scale * amplification
+        val legKick = 86f * scale * amplification
+
+        return pose.keypoints.mapIndexed { index, keypoint ->
             val basePoint = keypoint.position
-            
-            val animated = when (index) {
-                5, 6 -> {
-                    val armSwing = sin(cycle) * 80f * scale * amplification
-                    val armLift = abs(cos(cycle)) * 60f * scale * amplification
-                    PointF(basePoint.x + armSwing, basePoint.y - armLift)
-                }
-                7, 8 -> {
-                    val elbowBend = sin(cycle + PI.toFloat() / 2) * 100f * scale * amplification
-                    val elbowLift = abs(cos(cycle + PI.toFloat() / 2)) * 50f * scale * amplification
-                    PointF(basePoint.x + elbowBend, basePoint.y - elbowLift)
-                }
-                9, 10 -> {
-                    val wristFlick = sin(cycle + PI.toFloat()) * 120f * scale * amplification
-                    val wristHeight = abs(sin(cycle)) * 80f * scale * amplification
-                    PointF(basePoint.x + wristFlick, basePoint.y - wristHeight)
-                }
-                11, 12 -> {
-                    val hipSway = sin(cycle * 0.5f) * 50f * scale * amplification
-                    val hipBounce = abs(sin(cycle * 2)) * 40f * scale * amplification
-                    PointF(basePoint.x + hipSway, basePoint.y + hipBounce)
-                }
-                13, 14 -> {
-                    val kneeBend = abs(sin(cycle)) * 80f * scale * amplification
-                    PointF(basePoint.x, basePoint.y + kneeBend)
-                }
-                15, 16 -> {
-                    val footTap = abs(sin(cycle * 2)) * 60f * scale * amplification
-                    val footSlide = cos(cycle * 2) * 30f * scale * amplification
-                    PointF(basePoint.x + footSlide, basePoint.y + footTap)
-                }
-                0 -> {
-                    val headBob = sin(cycle * 2) * 30f * scale * amplification
-                    PointF(basePoint.x, basePoint.y + headBob)
-                }
-                else -> basePoint
+            when (index) {
+                0 -> PointF(
+                    basePoint.x + bodyLean * 0.32f,
+                    basePoint.y - lift * 18f * scale * amplification
+                )
+                5 -> PointF(
+                    basePoint.x + bodyLean * 0.26f - if (phase == 0 || phase == 2) armReach * 0.18f else armReach * 0.38f,
+                    basePoint.y - if (phase == 0) armHigh * 0.55f else armHigh * 0.18f
+                )
+                6 -> PointF(
+                    basePoint.x + bodyLean * 0.26f + if (phase == 1 || phase == 2) armReach * 0.18f else armReach * 0.38f,
+                    basePoint.y - if (phase == 1) armHigh * 0.55f else armHigh * 0.18f
+                )
+                7 -> PointF(
+                    basePoint.x + bodyLean * 0.36f - if (phase == 0) armReach * 0.62f else armReach * 0.28f,
+                    basePoint.y - if (phase == 0 || phase == 2) armHigh * 0.88f else armHigh * 0.22f
+                )
+                8 -> PointF(
+                    basePoint.x + bodyLean * 0.36f + if (phase == 1) armReach * 0.62f else armReach * 0.28f,
+                    basePoint.y - if (phase == 1 || phase == 2) armHigh * 0.88f else armHigh * 0.22f
+                )
+                9 -> PointF(
+                    basePoint.x + bodyLean * 0.44f - if (phase == 0) armReach * 0.96f else armReach * 0.42f,
+                    basePoint.y - if (phase == 0 || phase == 2) armHigh * 1.15f else armHigh * 0.10f
+                )
+                10 -> PointF(
+                    basePoint.x + bodyLean * 0.44f + if (phase == 1) armReach * 0.96f else armReach * 0.42f,
+                    basePoint.y - if (phase == 1 || phase == 2) armHigh * 1.15f else armHigh * 0.10f
+                )
+                11 -> PointF(basePoint.x + bodyLean * 0.42f - side * 22f * scale * amplification, basePoint.y + bodyDrop)
+                12 -> PointF(basePoint.x + bodyLean * 0.42f + side * 22f * scale * amplification, basePoint.y + bodyDrop * 0.84f)
+                13 -> PointF(
+                    basePoint.x + bodyLean * 0.30f - if (phase == 3) legKick * 0.52f else side * 20f * scale * amplification,
+                    basePoint.y + if (phase == 3) -legKick * 0.38f else bodyDrop * 1.20f
+                )
+                14 -> PointF(
+                    basePoint.x + bodyLean * 0.30f + if (phase == 2) legKick * 0.52f else side * 18f * scale * amplification,
+                    basePoint.y + if (phase == 2) -legKick * 0.38f else bodyDrop * 1.08f
+                )
+                15 -> PointF(
+                    basePoint.x + bodyLean * 0.18f - if (phase == 3) legKick * 0.92f else side * 34f * scale * amplification,
+                    basePoint.y + if (phase == 3) -legKick * 0.72f else kotlin.math.abs(beat) * 42f * scale * amplification
+                )
+                16 -> PointF(
+                    basePoint.x + bodyLean * 0.18f + if (phase == 2) legKick * 0.92f else side * 34f * scale * amplification,
+                    basePoint.y + if (phase == 2) -legKick * 0.72f else kotlin.math.abs(beat) * 42f * scale * amplification
+                )
+                else -> PointF(basePoint.x + bodyLean * 0.18f, basePoint.y + bodyDrop * 0.35f)
             }
-            
-            animatedPoints.add(animated)
         }
-        
-        return animatedPoints
     }
-    
+
     private fun animateChill(pose: PoseDetector.Pose, progress: Float, scale: Float): List<PointF> {
         val animatedPoints = mutableListOf<PointF>()
         val cycle = progress * 2 * PI.toFloat()
-        val amplification = 0.7f
+        val amplification = 1.05f
         
         pose.keypoints.forEachIndexed { index, keypoint ->
             val basePoint = keypoint.position
@@ -164,7 +180,7 @@ class KeypointAnimator {
         val beat = (progress * 8).toInt()
         val beatProgress = (progress * 8) - beat
         val isOnBeat = beatProgress < 0.25f
-        val amplification = 0.9f
+        val amplification = 1.3f
         
         pose.keypoints.forEachIndexed { index, keypoint ->
             val basePoint = keypoint.position

@@ -8,6 +8,7 @@ import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.Shader
 import android.util.Log
 import org.tensorflow.lite.DataType
@@ -65,7 +66,7 @@ class LocalArbitraryStyleTransferModel(private val context: Context) {
 
             outputBuffer.rewind()
             val stylizedBitmap = tensorBufferToBitmap(outputBuffer, outputTensor)
-            postProcessStylizedPerson(sourceBitmap, stylizedBitmap)
+            postProcessStylizedPerson(sourceBitmap, stylizedBitmap)?.takeIf { isUsableStylizedPerson(it) }
         } catch (e: Exception) {
             Log.e(TAG, "本地 arbitrary style transfer 推理失败", e)
             null
@@ -208,68 +209,125 @@ class LocalArbitraryStyleTransferModel(private val context: Context) {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG)
         canvas.drawColor(Color.WHITE)
 
-        paint.shader = LinearGradient(0f, 0f, width.toFloat(), height.toFloat(), Color.rgb(255, 145, 198), Color.rgb(55, 195, 238), Shader.TileMode.CLAMP)
-        canvas.drawCircle(width * 0.50f, height * 0.55f, width * 0.38f, paint)
+        paint.shader = LinearGradient(0f, 0f, width.toFloat(), height.toFloat(), Color.rgb(255, 210, 230), Color.rgb(135, 225, 248), Shader.TileMode.CLAMP)
+        canvas.drawCircle(width * 0.52f, height * 0.58f, width * 0.42f, paint)
         paint.shader = null
 
-        paint.color = Color.rgb(255, 232, 224)
+        paint.color = Color.rgb(255, 234, 224)
         canvas.drawCircle(width * 0.45f, height * 0.34f, width * 0.18f, paint)
 
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 8f
+        paint.strokeWidth = 7f
         paint.strokeCap = Paint.Cap.ROUND
-        paint.color = Color.rgb(50, 45, 95)
+        paint.color = Color.rgb(60, 58, 118)
         canvas.drawCircle(width * 0.45f, height * 0.34f, width * 0.18f, paint)
-        canvas.drawLine(width * 0.25f, height * 0.50f, width * 0.06f, height * 0.42f, paint)
-        canvas.drawLine(width * 0.67f, height * 0.50f, width * 0.90f, height * 0.58f, paint)
+        canvas.drawLine(width * 0.31f, height * 0.50f, width * 0.08f, height * 0.39f, paint)
+        canvas.drawLine(width * 0.63f, height * 0.50f, width * 0.91f, height * 0.34f, paint)
+        canvas.drawLine(width * 0.49f, height * 0.74f, width * 0.35f, height * 0.96f, paint)
+        canvas.drawLine(width * 0.56f, height * 0.74f, width * 0.85f, height * 0.62f, paint)
         paint.style = Paint.Style.FILL
 
-        paint.color = Color.rgb(42, 55, 145)
-        canvas.drawCircle(width * 0.38f, height * 0.31f, width * 0.10f, paint)
-        canvas.drawCircle(width * 0.53f, height * 0.31f, width * 0.10f, paint)
+        paint.color = Color.rgb(58, 62, 138)
+        canvas.drawCircle(width * 0.35f, height * 0.25f, width * 0.09f, paint)
+        canvas.drawCircle(width * 0.55f, height * 0.24f, width * 0.09f, paint)
+        paint.shader = LinearGradient(width * 0.58f, height * 0.28f, width * 0.96f, height * 0.57f, Color.rgb(82, 205, 236), Color.rgb(205, 245, 255), Shader.TileMode.CLAMP)
+        val ponytail = Path().apply {
+            moveTo(width * 0.58f, height * 0.28f)
+            cubicTo(width * 0.88f, height * 0.30f, width * 1.00f, height * 0.46f, width * 0.78f, height * 0.60f)
+            cubicTo(width * 0.96f, height * 0.45f, width * 0.82f, height * 0.34f, width * 0.58f, height * 0.28f)
+            close()
+        }
+        canvas.drawPath(ponytail, paint)
+        paint.shader = null
 
-        paint.color = Color.rgb(255, 122, 178)
+        paint.color = Color.rgb(255, 196, 220)
         val dress = Path().apply {
             moveTo(width * 0.35f, height * 0.43f)
             lineTo(width * 0.61f, height * 0.43f)
-            lineTo(width * 0.72f, height * 0.78f)
-            cubicTo(width * 0.56f, height * 0.88f, width * 0.34f, height * 0.84f, width * 0.25f, height * 0.78f)
+            lineTo(width * 0.78f, height * 0.76f)
+            cubicTo(width * 0.58f, height * 0.92f, width * 0.30f, height * 0.86f, width * 0.20f, height * 0.76f)
             close()
         }
         canvas.drawPath(dress, paint)
 
-        paint.color = Color.rgb(38, 42, 92)
-        paint.strokeWidth = 7f
+        paint.color = Color.rgb(78, 86, 150)
+        paint.strokeWidth = 5f
         paint.style = Paint.Style.STROKE
         canvas.drawPath(dress, paint)
         paint.color = Color.rgb(80, 210, 238)
-        canvas.drawLine(width * 0.36f, height * 0.49f, width * 0.63f, height * 0.49f, paint)
+        canvas.drawLine(width * 0.35f, height * 0.49f, width * 0.64f, height * 0.49f, paint)
+        paint.strokeWidth = 3f
+        paint.color = Color.WHITE
+        canvas.drawArc(android.graphics.RectF(width * 0.25f, height * 0.66f, width * 0.74f, height * 0.86f), 18f, 145f, false, paint)
         paint.style = Paint.Style.FILL
         return bitmap
     }
 
-    private fun postProcessStylizedPerson(sourceBitmap: Bitmap, stylizedBitmap: Bitmap): Bitmap {
+    private fun postProcessStylizedPerson(sourceBitmap: Bitmap, stylizedBitmap: Bitmap): Bitmap? {
         val width = stylizedBitmap.width
         val height = stylizedBitmap.height
         val sourceResized = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         Canvas(sourceResized).drawBitmap(sourceBitmap, null, Rect(0, 0, width, height), null)
         val foregroundMask = buildForegroundMask(sourceResized)
-        val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val transparentPerson = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
 
         for (y in 0 until height) {
             for (x in 0 until width) {
                 val index = y * width + x
                 if (foregroundMask[index]) {
-                    result.setPixel(x, y, enhanceStylizedColor(stylizedBitmap.getPixel(x, y)))
+                    transparentPerson.setPixel(x, y, enhanceStylizedColor(stylizedBitmap.getPixel(x, y)))
                 } else {
-                    result.setPixel(x, y, Color.TRANSPARENT)
+                    transparentPerson.setPixel(x, y, Color.TRANSPARENT)
                 }
             }
         }
 
         sourceResized.recycle()
         stylizedBitmap.recycle()
+        return normalizePersonCanvas(transparentPerson)
+    }
+
+    private fun normalizePersonCanvas(personBitmap: Bitmap): Bitmap {
+        val bounds = findOpaqueBounds(personBitmap)
+        if (bounds == null) return personBitmap
+
+        val outputSize = 640
+        val result = Bitmap.createBitmap(outputSize, outputSize, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(result)
+        canvas.drawColor(Color.TRANSPARENT)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
+        val maxPersonWidth = outputSize * 0.54f
+        val maxPersonHeight = outputSize * 0.68f
+        val scale = minOf(maxPersonWidth / bounds.width(), maxPersonHeight / bounds.height()).coerceAtMost(1.3f)
+        val drawWidth = bounds.width() * scale
+        val drawHeight = bounds.height() * scale
+        val dst = RectF(
+            (outputSize - drawWidth) / 2f,
+            outputSize * 0.54f - drawHeight / 2f,
+            (outputSize + drawWidth) / 2f,
+            outputSize * 0.54f + drawHeight / 2f
+        )
+        canvas.drawBitmap(personBitmap, bounds, dst, paint)
+        personBitmap.recycle()
         return result
+    }
+
+    private fun findOpaqueBounds(bitmap: Bitmap): Rect? {
+        var left = bitmap.width
+        var top = bitmap.height
+        var right = -1
+        var bottom = -1
+        for (y in 0 until bitmap.height) {
+            for (x in 0 until bitmap.width) {
+                if (Color.alpha(bitmap.getPixel(x, y)) > 24) {
+                    left = minOf(left, x)
+                    top = minOf(top, y)
+                    right = maxOf(right, x)
+                    bottom = maxOf(bottom, y)
+                }
+            }
+        }
+        return if (right >= left && bottom >= top) Rect(left, top, right + 1, bottom + 1) else null
     }
 
     private fun buildForegroundMask(bitmap: Bitmap): BooleanArray {
@@ -349,7 +407,33 @@ class LocalArbitraryStyleTransferModel(private val context: Context) {
     }
 
     private fun enhanceChannel(value: Int): Int {
-        val contrasted = ((value - 128) * 1.32f + 128).toInt()
-        return (contrasted - 8).coerceIn(0, 255)
+        val contrasted = ((value - 128) * 1.08f + 128).toInt()
+        return (contrasted - 18).coerceIn(0, 245)
+    }
+
+    private fun isUsableStylizedPerson(bitmap: Bitmap): Boolean {
+        var opaqueCount = 0
+        var brightCount = 0
+        var colorEnergy = 0L
+        val totalPixels = bitmap.width * bitmap.height
+        val step = maxOf(1, minOf(bitmap.width, bitmap.height) / 160)
+        for (y in 0 until bitmap.height step step) {
+            for (x in 0 until bitmap.width step step) {
+                val color = bitmap.getPixel(x, y)
+                if (Color.alpha(color) > 24) {
+                    opaqueCount++
+                    val maxChannel = maxOf(Color.red(color), Color.green(color), Color.blue(color))
+                    val minChannel = minOf(Color.red(color), Color.green(color), Color.blue(color))
+                    if (maxChannel > 238) brightCount++
+                    colorEnergy += (maxChannel - minChannel)
+                }
+            }
+        }
+        if (opaqueCount == 0) return false
+        val sampledPixels = ((bitmap.width + step - 1) / step) * ((bitmap.height + step - 1) / step)
+        val opaqueRatio = opaqueCount.toFloat() / sampledPixels
+        val brightRatio = brightCount.toFloat() / opaqueCount
+        val averageColorEnergy = colorEnergy.toFloat() / opaqueCount
+        return opaqueRatio in 0.04f..0.58f && brightRatio < 0.72f && averageColorEnergy > 12f && totalPixels > 0
     }
 }
