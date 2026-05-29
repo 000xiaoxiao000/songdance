@@ -72,6 +72,21 @@ dependencies {
     implementation(libs.glide)
     implementation(libs.androidx.paging.runtime)
     implementation(libs.androidx.exifinterface)
+    
+    // TensorFlow Lite for AI model inference
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+    
+    // MediaPipe for pose detection
+    implementation("com.google.mediapipe:tasks-vision:0.10.8")
+    
+    // Coroutines for async processing
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    
+    // Lifecycle components for lifecycleScope
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

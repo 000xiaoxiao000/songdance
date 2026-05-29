@@ -28,6 +28,8 @@ class AvatarUploadActivity : AppCompatActivity() {
     private lateinit var adapter: AvatarImageAdapter
     private var isSelectionMode = false
     private var progressDialog: AlertDialog? = null
+    private lateinit var aiModelManager: AIModelManager
+    private lateinit var danceFrameGenerator: DanceFrameGenerator
     
     private val pickImageLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -41,6 +43,12 @@ class AvatarUploadActivity : AppCompatActivity() {
         if (uris.isNotEmpty()) {
             handleMultipleImagesSelected(uris)
         }
+    }
+    
+    private val pickImageForAIGenerationLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { handleAIGeneration(it) }
     }
     
     companion object {
@@ -61,6 +69,9 @@ class AvatarUploadActivity : AppCompatActivity() {
         
         currentSetName = intent.getStringExtra(EXTRA_SET_NAME) ?: AvatarAssets.DIR_CUSTOM_SET_1
         
+        aiModelManager = AIModelManager(this)
+        danceFrameGenerator = DanceFrameGenerator(this, aiModelManager)
+        
         setupViews()
         loadImages()
     }
@@ -75,6 +86,10 @@ class AvatarUploadActivity : AppCompatActivity() {
         
         findViewById<Button>(R.id.btnAddMultiple).setOnClickListener {
             pickMultipleImagesLauncher.launch("image/*")
+        }
+        
+        findViewById<Button>(R.id.btnAIGenerate).setOnClickListener {
+            showAIGenerateDialog()
         }
         
         findViewById<Button>(R.id.btnBatchDelete).setOnClickListener {
@@ -463,6 +478,76 @@ class AvatarUploadActivity : AppCompatActivity() {
             .setMessage(message)
             .setPositiveButton("确定", null)
             .show()
+    }
+    
+    private fun showAIGenerateDialog() {
+        val styles = arrayOf("活力风格", "流畅风格", "节奏风格")
+        var selectedStyle = 0
+        
+        AlertDialog.Builder(this)
+            .setTitle("AI 生成唱跳动作")
+            .setSingleChoiceItems(styles, selectedStyle) { _, which ->
+                selectedStyle = which
+            }
+            .setPositiveButton("选择图片") { _, _ ->
+                val danceStyle = when (selectedStyle) {
+                    0 -> DanceStyle.POWER
+                    1 -> DanceStyle.CHILL
+                    2 -> DanceStyle.GROOVE
+                    else -> DanceStyle.POWER
+                }
+                
+                pickImageForAIGenerationLauncher.launch("image/*")
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+    
+    private fun handleAIGeneration(uri: Uri) {
+        val fileSize = getFileSize(uri)
+        if (fileSize > MAX_FILE_SIZE_BYTES) {
+            val sizeMB = String.format("%.2f", fileSize / (1024f * 1024f))
+            showFileSizeErrorDialog(sizeMB)
+            return
+        }
+        
+        showProgressDialog("AI 正在生成唱跳动作...", 30, 0)
+        
+        CoroutineScope(Dispatchers.Main).launch {
+            val result = danceFrameGenerator.generateAndSave(
+                sourceUri = uri,
+                setName = currentSetName,
+                frameCount = 30,
+                danceStyle = DanceStyle.POWER,
+                progressCallback = { current, total ->
+                    withContext(Dispatchers.Main) {
+                        val progressMessage = "AI 正在生成唱跳动作... ($current/$total)"
+                        progressDialog?.setMessage(progressMessage)
+                    }
+                }
+            )
+            
+            dismissProgressDialog()
+            
+            result.onSuccess { frameCount ->
+                AvatarLoader.clearCacheForDirectory(currentSetName)
+                showSuccessDialog(
+                    "生成成功",
+                    "AI 已成功生成 $frameCount 帧唱跳动作图片\n\n图片已保存到当前图片集"
+                )
+                loadImages()
+            }.onFailure { error ->
+                showErrorDialog(
+                    "生成失败",
+                    error.message ?: "AI 生成过程中出现未知错误"
+                )
+            }
+        }
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        aiModelManager.release()
     }
 }
 
