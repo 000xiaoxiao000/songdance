@@ -33,7 +33,7 @@ class KeypointAnimator {
             sequence.add(AnimatedPose(animatedKeypoints, progress))
         }
         
-        return sequence
+        return smoothSequence(sequence, windowSize = 5)
     }
     
     private fun animateKeypoints(
@@ -56,16 +56,16 @@ class KeypointAnimator {
         
         if (leftShoulder != null && rightShoulder != null) {
             val shoulderWidth = kotlin.math.abs(rightShoulder.x - leftShoulder.x)
-            return shoulderWidth / 100f
+            return (shoulderWidth / 120f).coerceIn(0.5f, 1.4f)
         }
         
-        return 1.5f
+        return 1.0f
     }
     
     private fun animatePower(pose: PoseDetector.Pose, progress: Float, scale: Float): List<PointF> {
         val animatedPoints = mutableListOf<PointF>()
         val cycle = progress * 4 * PI.toFloat()
-        val amplification = 4.0f
+        val amplification = 0.45f
         
         pose.keypoints.forEachIndexed { index, keypoint ->
             val basePoint = keypoint.position
@@ -116,7 +116,7 @@ class KeypointAnimator {
     private fun animateChill(pose: PoseDetector.Pose, progress: Float, scale: Float): List<PointF> {
         val animatedPoints = mutableListOf<PointF>()
         val cycle = progress * 2 * PI.toFloat()
-        val amplification = 3.5f
+        val amplification = 0.4f
         
         pose.keypoints.forEachIndexed { index, keypoint ->
             val basePoint = keypoint.position
@@ -164,7 +164,7 @@ class KeypointAnimator {
         val beat = (progress * 8).toInt()
         val beatProgress = (progress * 8) - beat
         val isOnBeat = beatProgress < 0.25f
-        val amplification = 5.0f
+        val amplification = 0.5f
         
         pose.keypoints.forEachIndexed { index, keypoint ->
             val basePoint = keypoint.position

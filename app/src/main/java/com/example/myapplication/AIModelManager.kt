@@ -71,11 +71,15 @@ class AIModelManager(private val context: Context) {
         val frames = mutableListOf<Bitmap>()
         animatedSequence.forEachIndexed { index, animatedPose ->
             try {
-                val frame = imageWarper.createFrameWithPose(
-                    sourceBitmap = inputBitmap,
-                    animatedKeypoints = animatedPose.keypoints,
-                    originalPose = detectedPose
-                )
+                val frame = if (index == 0) {
+                    inputBitmap.copy(Bitmap.Config.ARGB_8888, false)
+                } else {
+                    imageWarper.createFrameWithPose(
+                        sourceBitmap = inputBitmap,
+                        animatedKeypoints = animatedPose.keypoints,
+                        originalPose = detectedPose
+                    )
+                }
                 frames.add(frame)
                 
                 if ((index + 1) % 10 == 0) {

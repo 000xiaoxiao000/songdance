@@ -15,6 +15,7 @@ object AvatarImageManager {
     private const val AVATAR_DIR_NAME = "custom_avatars"
     private const val AVATAR_SET_1 = "set1"
     private const val AVATAR_SET_2 = "set2"
+    private val frameNameRegex = Regex("^dancer_single(\\d+)$")
     
     fun getAvatarDirectory(context: Context, setName: String): File {
         val dir = File(context.filesDir, "$AVATAR_DIR_NAME/$setName")
@@ -73,9 +74,16 @@ object AvatarImageManager {
     fun getAvailableImageNames(context: Context, setName: String): List<String> {
         val dir = getAvatarDirectory(context, setName)
         return dir.listFiles()
-            ?.filter { it.extension == "png" }
+            ?.filter { it.isFile && it.extension.equals("png", ignoreCase = true) }
             ?.map { it.nameWithoutExtension }
-            ?.sorted()
+            ?.sortedWith(
+                compareBy<String> { extractFrameIndex(it) ?: Int.MAX_VALUE }
+                    .thenBy { it }
+            )
             ?: emptyList()
+    }
+
+    private fun extractFrameIndex(imageName: String): Int? {
+        return frameNameRegex.find(imageName)?.groupValues?.get(1)?.toIntOrNull()
     }
 }

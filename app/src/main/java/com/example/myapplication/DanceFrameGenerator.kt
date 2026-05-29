@@ -2,7 +2,6 @@ package com.example.myapplication
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -23,7 +22,6 @@ class DanceFrameGenerator(
     
     companion object {
         private const val TAG = "DanceFrameGenerator"
-        private const val MAX_IMAGE_SIZE = 1024
     }
     
     /**
@@ -46,9 +44,9 @@ class DanceFrameGenerator(
         try {
             Log.d(TAG, "开始生成唱跳动作帧序列...")
             
-            // 1. 加载并预处理原始图片
+            // 1. 按上传图片相同规则加载，确保 AI 帧与普通上传图片尺寸一致
             progressCallback(0, actualFrameCount)
-            val sourceBitmap = loadAndPreprocessBitmap(sourceUri)
+            val sourceBitmap = loadGenerationBitmap(sourceUri)
             
             if (sourceBitmap == null) {
                 return@withContext Result.failure(
@@ -56,7 +54,7 @@ class DanceFrameGenerator(
                 )
             }
             
-            Log.d(TAG, "图片加载成功: ${sourceBitmap.width}x${sourceBitmap.height}")
+            Log.d(TAG, "图片加载成功（与上传尺寸规则一致）: ${sourceBitmap.width}x${sourceBitmap.height}")
             
             // 2. 初始化 AI 模型
             if (!aiModel.initialize()) {
@@ -110,52 +108,23 @@ class DanceFrameGenerator(
     }
     
     /**
-     * 加载并预处理图片
+     * 使用普通上传相同的压缩/旋转处理链加载图片。
+     * 这样 AI 生成帧与手动上传的同一张图片会得到一致的宽高。
      */
-    private fun loadAndPreprocessBitmap(uri: Uri): Bitmap? {
+    private fun loadGenerationBitmap(uri: Uri): Bitmap? {
         return try {
-            val inputStream = context.contentResolver.openInputStream(uri)
-            val options = BitmapFactory.Options().apply {
-                inJustDecodeBounds = true
+            val bitmap = ImageCompressor.compressImage(context, uri) ?: return null
+            if (bitmap.config == Bitmap.Config.ARGB_8888) {
+                bitmap
+            } else {
+                val converted = bitmap.copy(Bitmap.Config.ARGB_8888, false)
+                bitmap.recycle()
+                converted
             }
-            
-            BitmapFactory.decodeStream(inputStream, null, options)
-            inputStream?.close()
-            
-            val scale = calculateSampleSize(
-                options.outWidth,
-                options.outHeight,
-                MAX_IMAGE_SIZE
-            )
-            
-            val finalOptions = BitmapFactory.Options().apply {
-                inSampleSize = scale
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-            }
-            
-            val finalInputStream = context.contentResolver.openInputStream(uri)
-            val bitmap = BitmapFactory.decodeStream(finalInputStream, null, finalOptions)
-            finalInputStream?.close()
-            
-            bitmap
         } catch (e: Exception) {
             Log.e(TAG, "加载图片失败", e)
             null
         }
-    }
-    
-    /**
-     * 计算采样率
-     */
-    private fun calculateSampleSize(width: Int, height: Int, maxSize: Int): Int {
-        var scale = 1
-        val maxDimension = maxOf(width, height)
-        
-        while (maxDimension / scale > maxSize) {
-            scale *= 2
-        }
-        
-        return scale
     }
     
     /**

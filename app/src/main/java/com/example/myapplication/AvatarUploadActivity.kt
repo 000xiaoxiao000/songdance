@@ -130,6 +130,8 @@ class AvatarUploadActivity : AppCompatActivity() {
                 if (isSelectionMode) {
                     adapter.toggleSelection(imageName)
                     updateSelectionUI()
+                } else {
+                    openImagePreview(imageName)
                 }
             },
             onDeleteClick = { imageName ->
@@ -139,6 +141,10 @@ class AvatarUploadActivity : AppCompatActivity() {
             }
         )
         recyclerView.adapter = adapter
+    }
+
+    private fun openImagePreview(imageName: String) {
+        startActivity(ImagePreviewActivity.createIntent(this, currentSetName, imageName))
     }
     
     private fun toggleSelectionMode() {

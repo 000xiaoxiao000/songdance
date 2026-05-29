@@ -38,7 +38,11 @@ class ImageWarper {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
             alpha = 255
         }
-        canvas.drawBitmap(sourceBitmap, transform, paint)
+        
+        canvas.save()
+        canvas.concat(transform)
+        canvas.drawBitmap(sourceBitmap, 0f, 0f, paint)
+        canvas.restore()
 
         return resultBitmap
     }
@@ -137,7 +141,22 @@ class ImageWarper {
         originalPose: PoseDetector.Pose
     ): Bitmap {
         val originalKeypoints = originalPose.keypoints.map { it.position }
-        return warpImage(sourceBitmap, originalKeypoints, animatedKeypoints)
+        val warpedBitmap = warpImage(sourceBitmap, originalKeypoints, animatedKeypoints)
+        
+        if (warpedBitmap.width != sourceBitmap.width || warpedBitmap.height != sourceBitmap.height) {
+            val resizedBitmap = Bitmap.createScaledBitmap(
+                warpedBitmap,
+                sourceBitmap.width,
+                sourceBitmap.height,
+                true
+            )
+            if (warpedBitmap != resizedBitmap) {
+                warpedBitmap.recycle()
+            }
+            return resizedBitmap
+        }
+        
+        return warpedBitmap
     }
 
     fun applyBodyPartTransform(
