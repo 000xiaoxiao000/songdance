@@ -172,22 +172,15 @@ class ImageWarper {
 
         val bounds = layers.foregroundBounds
         val cycle = frameProgress.coerceIn(0f, 1f) * 2f * PI.toFloat()
-        val hop = kotlin.math.abs(sin(cycle * 4f))
-        val sway = sin(cycle * 2f)
-        val turn = sin(cycle * 3f)
-        val shoulder = sin(cycle * 5f)
+        val beat = kotlin.math.abs(sin(cycle * 4f))
+        val lean = sin(cycle * 2f)
+        val nod = sin(cycle * 6f)
         val centerX = bounds.centerX()
-        val centerY = bounds.centerY()
-
+        val floorY = bounds.bottom
         val matrix = Matrix().apply {
-            postTranslate(-centerX, -centerY)
-            postScale(0.92f + hop * 0.04f, 0.94f + kotlin.math.abs(turn) * 0.04f)
-            postSkew(turn * 0.08f, shoulder * 0.025f)
-            postRotate(sway * 16f + turn * 6f)
-            postTranslate(
-                centerX + sway * width * 0.10f,
-                centerY - hop * height * 0.09f + shoulder * height * 0.025f
-            )
+            postTranslate(-centerX, -floorY)
+            postRotate(lean * 7f + nod * 2f)
+            postTranslate(centerX, floorY - beat * height * 0.035f)
         }
         keepBoundsInsideCanvas(matrix, bounds, width.toFloat(), height.toFloat())
         canvas.drawBitmap(layers.foreground, matrix, paint)

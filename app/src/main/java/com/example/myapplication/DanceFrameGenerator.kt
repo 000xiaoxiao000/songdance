@@ -80,10 +80,9 @@ class DanceFrameGenerator(
                 )
             }
             
-            // 4. 保存到图片集
-            val existingImages = AvatarImageManager
-                .getAvailableImageNames(context, setName)
-            var nextIndex = getNextFrameIndex(existingImages)
+            // 4. 保存到图片集：AI 动作序列每次重新生成，避免旧坏帧混在新动作里
+            clearGeneratedFrames(setName)
+            var nextIndex = 1
             
             var savedCount = 0
             frames.forEachIndexed { index, frame ->
@@ -127,6 +126,18 @@ class DanceFrameGenerator(
         }
     }
     
+
+    private fun clearGeneratedFrames(setName: String) {
+        val dir = AvatarImageManager.getAvatarDirectory(context, setName)
+        dir.listFiles()
+            ?.filter { file -> file.isFile && Regex("^dancer_single\\d+\\.png$").matches(file.name) }
+            ?.forEach { file ->
+                if (!file.delete()) {
+                    Log.w(TAG, "删除旧生成帧失败: ${file.name}")
+                }
+            }
+    }
+
     /**
      * 获取下一个帧索引
      */
