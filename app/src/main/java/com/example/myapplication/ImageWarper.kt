@@ -156,6 +156,47 @@ class ImageWarper {
         return if (count > 0) sumAngle / count else 0f
     }
 
+
+    fun createContinuousDanceFrame(
+        sourceBitmap: Bitmap,
+        frameProgress: Float
+    ): Bitmap {
+        val width = sourceBitmap.width
+        val height = sourceBitmap.height
+        val resultBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(resultBitmap)
+        canvas.drawColor(Color.TRANSPARENT)
+        val layers = extractPersonLayers(sourceBitmap)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
+        canvas.drawBitmap(layers.background, 0f, 0f, paint)
+
+        val bounds = layers.foregroundBounds
+        val cycle = frameProgress.coerceIn(0f, 1f) * 2f * PI.toFloat()
+        val hop = kotlin.math.abs(sin(cycle * 4f))
+        val sway = sin(cycle * 2f)
+        val turn = sin(cycle * 3f)
+        val shoulder = sin(cycle * 5f)
+        val centerX = bounds.centerX()
+        val centerY = bounds.centerY()
+
+        val matrix = Matrix().apply {
+            postTranslate(-centerX, -centerY)
+            postScale(0.92f + hop * 0.04f, 0.94f + kotlin.math.abs(turn) * 0.04f)
+            postSkew(turn * 0.08f, shoulder * 0.025f)
+            postRotate(sway * 16f + turn * 6f)
+            postTranslate(
+                centerX + sway * width * 0.10f,
+                centerY - hop * height * 0.09f + shoulder * height * 0.025f
+            )
+        }
+        keepBoundsInsideCanvas(matrix, bounds, width.toFloat(), height.toFloat())
+        canvas.drawBitmap(layers.foreground, matrix, paint)
+
+        layers.foreground.recycle()
+        layers.background.recycle()
+        return resultBitmap
+    }
+
     fun createFrameWithPose(
         sourceBitmap: Bitmap,
         animatedKeypoints: List<PointF>,
@@ -429,6 +470,108 @@ class ImageWarper {
         canvas.restore()
     }
 
+
+
+    private fun drawContinuousDanceParts(
+        canvas: Canvas,
+        sourceBitmap: Bitmap,
+        bounds: RectF,
+        frameProgress: Float,
+        width: Float,
+        height: Float
+    ) {
+        if (bounds.width() <= 1f || bounds.height() <= 1f) return
+        val cycle = frameProgress.coerceIn(0f, 1f) * 2f * PI.toFloat()
+        val phase = ((frameProgress.coerceIn(0f, 0.9999f) * 8f).toInt())
+        val bodyHeight = bounds.height()
+        val bodyWidth = bounds.width()
+        val centerX = bounds.centerX()
+        val top = bounds.top
+        val bottom = bounds.bottom
+        val wave = sin(cycle * 4f)
+        val lift = kotlin.math.abs(sin(cycle * 2f))
+        val kick = kotlin.math.abs(sin(cycle * 3f))
+        val turn = sin(cycle * 2f)
+
+        val head = RectF(centerX - bodyWidth * 0.52f, top, centerX + bodyWidth * 0.58f, top + bodyHeight * 0.38f)
+        val leftArm = RectF(bounds.left - bodyWidth * 0.14f, top + bodyHeight * 0.22f, centerX + bodyWidth * 0.10f, top + bodyHeight * 0.68f)
+        val rightArm = RectF(centerX - bodyWidth * 0.10f, top + bodyHeight * 0.22f, bounds.right + bodyWidth * 0.14f, top + bodyHeight * 0.68f)
+        val skirt = RectF(bounds.left + bodyWidth * 0.08f, top + bodyHeight * 0.40f, bounds.right - bodyWidth * 0.02f, top + bodyHeight * 0.78f)
+        val leftLeg = RectF(bounds.left + bodyWidth * 0.10f, top + bodyHeight * 0.58f, centerX + bodyWidth * 0.10f, bottom)
+        val rightLeg = RectF(centerX - bodyWidth * 0.10f, top + bodyHeight * 0.58f, bounds.right - bodyWidth * 0.04f, bottom)
+
+        val leftArmUp = phase == 0 || phase == 4 || phase == 6
+        val rightArmUp = phase == 1 || phase == 4 || phase == 7
+        val leftKick = phase == 3 || phase == 6
+        val rightKick = phase == 2 || phase == 5
+
+        drawClippedMotionPart(
+            canvas,
+            sourceBitmap,
+            head,
+            PointF(centerX, top + bodyHeight * 0.23f),
+            dx = turn * width * 0.04f,
+            dy = -lift * height * 0.04f,
+            rotation = turn * 24f,
+            scale = 1f + lift * 0.08f,
+            alpha = 255
+        )
+        drawClippedMotionPart(
+            canvas,
+            sourceBitmap,
+            leftArm,
+            PointF(centerX - bodyWidth * 0.16f, top + bodyHeight * 0.34f),
+            dx = if (leftArmUp) -width * 0.22f * (0.45f + lift) else -width * 0.08f * kotlin.math.abs(wave),
+            dy = if (leftArmUp) -height * 0.22f * (0.40f + lift) else height * 0.04f * wave,
+            rotation = if (leftArmUp) -72f - wave * 22f else -18f + wave * 22f,
+            scale = 1.10f,
+            alpha = 255
+        )
+        drawClippedMotionPart(
+            canvas,
+            sourceBitmap,
+            rightArm,
+            PointF(centerX + bodyWidth * 0.16f, top + bodyHeight * 0.34f),
+            dx = if (rightArmUp) width * 0.22f * (0.45f + lift) else width * 0.08f * kotlin.math.abs(wave),
+            dy = if (rightArmUp) -height * 0.22f * (0.40f + lift) else -height * 0.03f * wave,
+            rotation = if (rightArmUp) 72f - wave * 22f else 18f + wave * 22f,
+            scale = 1.10f,
+            alpha = 255
+        )
+        drawClippedMotionPart(
+            canvas,
+            sourceBitmap,
+            skirt,
+            PointF(centerX, top + bodyHeight * 0.55f),
+            dx = turn * width * 0.05f,
+            dy = -lift * height * 0.03f,
+            rotation = turn * 18f,
+            scale = 1.03f + kick * 0.05f,
+            alpha = 248
+        )
+        drawClippedMotionPart(
+            canvas,
+            sourceBitmap,
+            leftLeg,
+            PointF(centerX - bodyWidth * 0.12f, top + bodyHeight * 0.67f),
+            dx = if (leftKick) -width * 0.18f * (0.40f + kick) else -width * 0.05f * lift,
+            dy = if (leftKick) -height * 0.16f * (0.35f + kick) else height * 0.05f * lift,
+            rotation = if (leftKick) -58f - wave * 12f else -12f + wave * 18f,
+            scale = 1.08f,
+            alpha = 255
+        )
+        drawClippedMotionPart(
+            canvas,
+            sourceBitmap,
+            rightLeg,
+            PointF(centerX + bodyWidth * 0.12f, top + bodyHeight * 0.67f),
+            dx = if (rightKick) width * 0.18f * (0.40f + kick) else width * 0.05f * lift,
+            dy = if (rightKick) -height * 0.16f * (0.35f + kick) else height * 0.05f * lift,
+            rotation = if (rightKick) 58f - wave * 12f else 12f + wave * 18f,
+            scale = 1.08f,
+            alpha = 255
+        )
+    }
 
     private fun drawSpriteDanceAccents(
         canvas: Canvas,

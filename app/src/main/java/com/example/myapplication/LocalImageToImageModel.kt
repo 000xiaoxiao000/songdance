@@ -294,16 +294,17 @@ class LocalImageToImageModel(private val context: Context) {
         val output = Bitmap.createBitmap(personBitmap.width, personBitmap.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(output)
         canvas.drawColor(Color.TRANSPARENT)
-        val maxWidth = personBitmap.width * 0.68f
-        val maxHeight = personBitmap.height * 0.74f
-        val scale = minOf(maxWidth / bounds.width().coerceAtLeast(1), maxHeight / bounds.height().coerceAtLeast(1), 1f)
+        val maxWidth = personBitmap.width * 0.88f
+        val maxHeight = personBitmap.height * 0.88f
+        val rawScale = minOf(maxWidth / bounds.width().coerceAtLeast(1), maxHeight / bounds.height().coerceAtLeast(1))
+        val scale = if (rawScale < 1f) rawScale else 1f
         val drawWidth = bounds.width() * scale
         val drawHeight = bounds.height() * scale
         val dst = RectF(
             (personBitmap.width - drawWidth) / 2f,
-            personBitmap.height * 0.52f - drawHeight / 2f,
+            personBitmap.height * 0.50f - drawHeight / 2f,
             (personBitmap.width + drawWidth) / 2f,
-            personBitmap.height * 0.52f + drawHeight / 2f
+            personBitmap.height * 0.50f + drawHeight / 2f
         )
         val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
         canvas.drawBitmap(personBitmap, bounds, dst, paint)

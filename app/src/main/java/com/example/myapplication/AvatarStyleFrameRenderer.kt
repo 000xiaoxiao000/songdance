@@ -2,7 +2,6 @@ package com.example.myapplication
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.PointF
 
 /**
  * 本地图像生成/风格迁移模型驱动的 avatar 风格生成器。
@@ -11,7 +10,6 @@ import android.graphics.PointF
 class AvatarStyleFrameRenderer(private val context: Context) {
 
     private val localImageToImageModel = LocalImageToImageModel(context)
-    private val keypointAnimator = KeypointAnimator()
     private val imageWarper = ImageWarper()
 
     fun generateFrames(
@@ -19,27 +17,17 @@ class AvatarStyleFrameRenderer(private val context: Context) {
         detectedPose: PoseDetector.Pose,
         frameCount: Int
     ): List<Bitmap> {
+        @Suppress("UNUSED_VARIABLE")
+        val poseForDetectionOnly = detectedPose
         val stylizedBase = localImageToImageModel.stylize(sourceBitmap) ?: return emptyList()
+        val safeFrameCount = frameCount.coerceAtLeast(1)
 
-        val scaledPose = scalePose(
-            pose = detectedPose,
-            sourceWidth = sourceBitmap.width.toFloat(),
-            sourceHeight = sourceBitmap.height.toFloat(),
-            targetWidth = stylizedBase.width.toFloat(),
-            targetHeight = stylizedBase.height.toFloat()
-        )
-        val animatedSequence = keypointAnimator.generateDanceSequence(
-            basePose = scaledPose,
-            frameCount = frameCount,
-            danceStyle = DanceStyle.POWER
-        )
-        val frames = ArrayList<Bitmap>(frameCount)
-        animatedSequence.forEachIndexed { index, animatedPose ->
-            val frame = imageWarper.createFrameWithPose(
+        val frames = ArrayList<Bitmap>(safeFrameCount)
+        for (index in 0 until safeFrameCount) {
+            val progress = if (safeFrameCount <= 1) 0f else index.toFloat() / safeFrameCount
+            val frame = imageWarper.createContinuousDanceFrame(
                 sourceBitmap = stylizedBase,
-                animatedKeypoints = animatedPose.keypoints,
-                originalPose = scaledPose,
-                frameProgress = animatedPose.timestamp
+                frameProgress = progress
             )
             frames.add(frame)
         }
@@ -51,23 +39,4 @@ class AvatarStyleFrameRenderer(private val context: Context) {
         localImageToImageModel.release()
     }
 
-    private fun scalePose(
-        pose: PoseDetector.Pose,
-        sourceWidth: Float,
-        sourceHeight: Float,
-        targetWidth: Float,
-        targetHeight: Float
-    ): PoseDetector.Pose {
-        val scaleX = targetWidth / sourceWidth.coerceAtLeast(1f)
-        val scaleY = targetHeight / sourceHeight.coerceAtLeast(1f)
-        return PoseDetector.Pose(
-            keypoints = pose.keypoints.map { keypoint ->
-                PoseDetector.Keypoint(
-                    position = PointF(keypoint.position.x * scaleX, keypoint.position.y * scaleY),
-                    confidence = keypoint.confidence
-                )
-            },
-            confidence = pose.confidence
-        )
-    }
 }
