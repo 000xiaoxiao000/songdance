@@ -19,6 +19,7 @@ data class OverlaySettings(
     val avatarAnchorOffsetPercent: Float = 0f,
     val audioActivityThreshold: Float = 0.05f,
     val audioInactivityTimeoutMs: Int = 1500,
+    val aiFrameCount: Int = 30,
 )
 
 class OverlaySettingsRepository(context: Context) {
@@ -47,6 +48,8 @@ class OverlaySettingsRepository(context: Context) {
             useAvatarVariant1 = prefs.getBoolean(KEY_USE_AVATAR_VARIANT_1, false),
             avatarDir = readString(KEY_AVATAR_DIR, "", DEFAULT_AVATAR_DIR),
             avatarVariantDir = readString(KEY_AVATAR_VARIANT_DIR, "", DEFAULT_AVATAR_VARIANT_DIR),
+            aiFrameCount = readInt(KEY_AI_FRAME_COUNT, LEGACY_KEY_AI_FRAME_COUNT, DEFAULT_AI_FRAME_COUNT)
+                .coerceIn(10, 120),
         )
     }
 
@@ -64,6 +67,7 @@ class OverlaySettingsRepository(context: Context) {
             putBoolean(KEY_USE_AVATAR_VARIANT_1, settings.useAvatarVariant1)
             putString(KEY_AVATAR_DIR, settings.avatarDir)
             putString(KEY_AVATAR_VARIANT_DIR, settings.avatarVariantDir)
+            putInt(KEY_AI_FRAME_COUNT, settings.aiFrameCount)
             // OpenGL ES 选项已移除
         }
     }
@@ -202,6 +206,7 @@ class OverlaySettingsRepository(context: Context) {
         const val KEY_USE_AVATAR_VARIANT_1 = "pref_use_avatar1"
         const val KEY_AVATAR_DIR = "pref_avatar_dir"
         const val KEY_AVATAR_VARIANT_DIR = "pref_avatar_variant_dir"
+        const val KEY_AI_FRAME_COUNT = "pref_ai_frame_count"
         // OpenGL ES 首选项键已移除
 
         private const val LEGACY_KEY_SENSITIVITY = "sensitivity"
@@ -216,12 +221,14 @@ class OverlaySettingsRepository(context: Context) {
         private const val LEGACY_KEY_AVATAR_ANCHOR_OFFSET = "avatar_anchor_offset"
         private const val LEGACY_KEY_AUDIO_THRESHOLD = "audio_threshold"
         private const val LEGACY_KEY_AUDIO_INACTIVITY_TIMEOUT = "audio_inactivity_timeout_ms"
+        private const val LEGACY_KEY_AI_FRAME_COUNT = "ai_frame_count"
 
         private const val DEFAULT_SENSITIVITY = 1.0f
         private const val DEFAULT_SCALE = 1.0f
         private const val DEFAULT_ALPHA = 0.92f
         private const val DEFAULT_AUDIO_THRESHOLD = 0.05f
         private const val DEFAULT_AUDIO_INACTIVITY_TIMEOUT_MS = 1500
+        private const val DEFAULT_AI_FRAME_COUNT = 30
         private const val DEFAULT_AVATAR_DIR = AvatarAssets.DIR_CUSTOM_SET_1
         private const val DEFAULT_AVATAR_VARIANT_DIR = AvatarAssets.DIR_CUSTOM_SET_2
 

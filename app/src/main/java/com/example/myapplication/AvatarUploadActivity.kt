@@ -30,6 +30,7 @@ class AvatarUploadActivity : AppCompatActivity() {
     private var progressDialog: AlertDialog? = null
     private lateinit var aiModelManager: AIModelManager
     private lateinit var danceFrameGenerator: DanceFrameGenerator
+    private var selectedFrameCount = 30
     
     private val pickImageLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -79,6 +80,26 @@ class AvatarUploadActivity : AppCompatActivity() {
     private fun setupViews() {
         findViewById<TextView>(R.id.tvSetTitle).text = 
             if (currentSetName == AvatarAssets.DIR_CUSTOM_SET_1) "图片集 1" else "图片集 2"
+        
+        // 设置帧数 SeekBar
+        val seekBarFrameCount = findViewById<android.widget.SeekBar>(R.id.seekBarFrameCount)
+        val tvFrameCount = findViewById<TextView>(R.id.tvFrameCount)
+        
+        // SeekBar 范围是 0-90，实际帧数是 10-100
+        seekBarFrameCount.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                // 将 0-90 的进度映射到 10-100 的帧数
+                selectedFrameCount = progress + 10
+                tvFrameCount.text = selectedFrameCount.toString()
+            }
+            
+            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
+        })
+        
+        // 初始化显示
+        tvFrameCount.text = selectedFrameCount.toString()
+        seekBarFrameCount.progress = selectedFrameCount - 10
         
         findViewById<Button>(R.id.btnAddImage).setOnClickListener {
             pickImageLauncher.launch("image/*")
@@ -481,22 +502,10 @@ class AvatarUploadActivity : AppCompatActivity() {
     }
     
     private fun showAIGenerateDialog() {
-        val styles = arrayOf("活力风格", "流畅风格", "节奏风格")
-        var selectedStyle = 0
-        
         AlertDialog.Builder(this)
             .setTitle("AI 生成唱跳动作")
-            .setSingleChoiceItems(styles, selectedStyle) { _, which ->
-                selectedStyle = which
-            }
+            .setMessage("将为图片中的人物生成 $selectedFrameCount 帧唱跳动作序列\n\n请选择一张包含人物的图片")
             .setPositiveButton("选择图片") { _, _ ->
-                val danceStyle = when (selectedStyle) {
-                    0 -> DanceStyle.POWER
-                    1 -> DanceStyle.CHILL
-                    2 -> DanceStyle.GROOVE
-                    else -> DanceStyle.POWER
-                }
-                
                 pickImageForAIGenerationLauncher.launch("image/*")
             }
             .setNegativeButton("取消", null)
@@ -511,13 +520,13 @@ class AvatarUploadActivity : AppCompatActivity() {
             return
         }
         
-        showProgressDialog("AI 正在生成唱跳动作...", 30, 0)
+        showProgressDialog("AI 正在生成唱跳动作...", selectedFrameCount, 0)
         
         CoroutineScope(Dispatchers.Main).launch {
             val result = danceFrameGenerator.generateAndSave(
                 sourceUri = uri,
                 setName = currentSetName,
-                frameCount = 30,
+                frameCount = selectedFrameCount,
                 danceStyle = DanceStyle.POWER,
                 progressCallback = { current, total ->
                     withContext(Dispatchers.Main) {

@@ -41,44 +41,68 @@ class KeypointAnimator {
         progress: Float,
         danceStyle: DanceStyle
     ): List<PointF> {
+        val imageScale = calculateImageScale(basePose)
+        
         return when (danceStyle) {
-            DanceStyle.POWER -> animatePower(basePose, progress)
-            DanceStyle.CHILL -> animateChill(basePose, progress)
-            DanceStyle.GROOVE -> animateGroove(basePose, progress)
+            DanceStyle.POWER -> animatePower(basePose, progress, imageScale)
+            DanceStyle.CHILL -> animateChill(basePose, progress, imageScale)
+            DanceStyle.GROOVE -> animateGroove(basePose, progress, imageScale)
         }
     }
     
-    private fun animatePower(pose: PoseDetector.Pose, progress: Float): List<PointF> {
+    private fun calculateImageScale(pose: PoseDetector.Pose): Float {
+        val leftShoulder = pose.keypoints.getOrNull(5)?.position
+        val rightShoulder = pose.keypoints.getOrNull(6)?.position
+        
+        if (leftShoulder != null && rightShoulder != null) {
+            val shoulderWidth = kotlin.math.abs(rightShoulder.x - leftShoulder.x)
+            return shoulderWidth / 100f
+        }
+        
+        return 1.5f
+    }
+    
+    private fun animatePower(pose: PoseDetector.Pose, progress: Float, scale: Float): List<PointF> {
         val animatedPoints = mutableListOf<PointF>()
         val cycle = progress * 4 * PI.toFloat()
+        val amplification = 4.0f
         
         pose.keypoints.forEachIndexed { index, keypoint ->
             val basePoint = keypoint.position
             
             val animated = when (index) {
                 5, 6 -> {
-                    val armSwing = sin(cycle) * 30f
-                    PointF(basePoint.x + armSwing, basePoint.y)
+                    val armSwing = sin(cycle) * 80f * scale * amplification
+                    val armLift = abs(cos(cycle)) * 60f * scale * amplification
+                    PointF(basePoint.x + armSwing, basePoint.y - armLift)
                 }
                 7, 8 -> {
-                    val elbowBend = sin(cycle + PI.toFloat() / 2) * 40f
-                    PointF(basePoint.x + elbowBend, basePoint.y)
+                    val elbowBend = sin(cycle + PI.toFloat() / 2) * 100f * scale * amplification
+                    val elbowLift = abs(cos(cycle + PI.toFloat() / 2)) * 50f * scale * amplification
+                    PointF(basePoint.x + elbowBend, basePoint.y - elbowLift)
                 }
                 9, 10 -> {
-                    val wristFlick = sin(cycle + PI.toFloat()) * 50f
-                    PointF(basePoint.x + wristFlick, basePoint.y - abs(sin(cycle)) * 20f)
+                    val wristFlick = sin(cycle + PI.toFloat()) * 120f * scale * amplification
+                    val wristHeight = abs(sin(cycle)) * 80f * scale * amplification
+                    PointF(basePoint.x + wristFlick, basePoint.y - wristHeight)
                 }
                 11, 12 -> {
-                    val hipSway = sin(cycle * 0.5f) * 15f
-                    PointF(basePoint.x + hipSway, basePoint.y)
+                    val hipSway = sin(cycle * 0.5f) * 50f * scale * amplification
+                    val hipBounce = abs(sin(cycle * 2)) * 40f * scale * amplification
+                    PointF(basePoint.x + hipSway, basePoint.y + hipBounce)
                 }
                 13, 14 -> {
-                    val kneeBend = abs(sin(cycle)) * 25f
+                    val kneeBend = abs(sin(cycle)) * 80f * scale * amplification
                     PointF(basePoint.x, basePoint.y + kneeBend)
                 }
                 15, 16 -> {
-                    val footTap = abs(sin(cycle * 2)) * 15f
-                    PointF(basePoint.x, basePoint.y + footTap)
+                    val footTap = abs(sin(cycle * 2)) * 60f * scale * amplification
+                    val footSlide = cos(cycle * 2) * 30f * scale * amplification
+                    PointF(basePoint.x + footSlide, basePoint.y + footTap)
+                }
+                0 -> {
+                    val headBob = sin(cycle * 2) * 30f * scale * amplification
+                    PointF(basePoint.x, basePoint.y + headBob)
                 }
                 else -> basePoint
             }
@@ -89,31 +113,42 @@ class KeypointAnimator {
         return animatedPoints
     }
     
-    private fun animateChill(pose: PoseDetector.Pose, progress: Float): List<PointF> {
+    private fun animateChill(pose: PoseDetector.Pose, progress: Float, scale: Float): List<PointF> {
         val animatedPoints = mutableListOf<PointF>()
         val cycle = progress * 2 * PI.toFloat()
+        val amplification = 3.5f
         
         pose.keypoints.forEachIndexed { index, keypoint ->
             val basePoint = keypoint.position
             
             val animated = when (index) {
                 5, 6 -> {
-                    val armWave = sin(cycle) * 20f
-                    val armLift = cos(cycle) * 15f
+                    val armWave = sin(cycle) * 70f * scale * amplification
+                    val armLift = cos(cycle) * 60f * scale * amplification
                     PointF(basePoint.x + armWave, basePoint.y - armLift)
                 }
                 7, 8 -> {
-                    val elbowFlow = sin(cycle + PI.toFloat() / 3) * 25f
-                    PointF(basePoint.x + elbowFlow, basePoint.y)
+                    val elbowFlow = sin(cycle + PI.toFloat() / 3) * 90f * scale * amplification
+                    val elbowHeight = cos(cycle + PI.toFloat() / 3) * 40f * scale * amplification
+                    PointF(basePoint.x + elbowFlow, basePoint.y - elbowHeight)
                 }
                 9, 10 -> {
-                    val wristCircle = sin(cycle + PI.toFloat() / 2) * 30f
-                    val wristHeight = cos(cycle + PI.toFloat() / 2) * 20f
-                    PointF(basePoint.x + wristCircle, basePoint.y + wristHeight)
+                    val wristCircle = sin(cycle + PI.toFloat() / 2) * 100f * scale * amplification
+                    val wristHeight = cos(cycle + PI.toFloat() / 2) * 70f * scale * amplification
+                    PointF(basePoint.x + wristCircle, basePoint.y - wristHeight)
                 }
                 11, 12 -> {
-                    val hipRoll = sin(cycle * 0.5f) * 12f
-                    PointF(basePoint.x + hipRoll, basePoint.y)
+                    val hipRoll = sin(cycle * 0.5f) * 45f * scale * amplification
+                    val hipSway = cos(cycle * 0.5f) * 30f * scale * amplification
+                    PointF(basePoint.x + hipRoll, basePoint.y + hipSway)
+                }
+                13, 14 -> {
+                    val kneeSway = sin(cycle * 0.5f) * 35f * scale * amplification
+                    PointF(basePoint.x + kneeSway, basePoint.y)
+                }
+                0 -> {
+                    val headSway = sin(cycle) * 25f * scale * amplification
+                    PointF(basePoint.x + headSway, basePoint.y)
                 }
                 else -> basePoint
             }
@@ -124,39 +159,88 @@ class KeypointAnimator {
         return animatedPoints
     }
     
-    private fun animateGroove(pose: PoseDetector.Pose, progress: Float): List<PointF> {
+    private fun animateGroove(pose: PoseDetector.Pose, progress: Float, scale: Float): List<PointF> {
         val animatedPoints = mutableListOf<PointF>()
         val beat = (progress * 8).toInt()
         val beatProgress = (progress * 8) - beat
-        val isOnBeat = beatProgress < 0.3f
+        val isOnBeat = beatProgress < 0.25f
+        val amplification = 5.0f
         
         pose.keypoints.forEachIndexed { index, keypoint ->
             val basePoint = keypoint.position
             
             val animated = if (isOnBeat) {
-                val intensity = sin(beatProgress * PI.toFloat() / 0.3f)
+                val intensity = sin(beatProgress * PI.toFloat() / 0.25f)
                 
                 when (index) {
                     5, 6 -> {
-                        val armPop = intensity * 35f
-                        PointF(basePoint.x + armPop * if (index == 5) -1 else 1, basePoint.y - armPop * 0.5f)
+                        val armPop = intensity * 120f * scale * amplification
+                        val armLift = intensity * 80f * scale * amplification
+                        PointF(
+                            basePoint.x + armPop * if (index == 5) -1 else 1, 
+                            basePoint.y - armLift
+                        )
+                    }
+                    7, 8 -> {
+                        val elbowPop = intensity * 100f * scale * amplification
+                        val elbowLift = intensity * 60f * scale * amplification
+                        PointF(
+                            basePoint.x + elbowPop * if (index == 7) -1 else 1,
+                            basePoint.y - elbowLift
+                        )
                     }
                     9, 10 -> {
-                        val handPop = intensity * 45f
-                        PointF(basePoint.x + handPop * if (index == 9) -1 else 1, basePoint.y)
+                        val handPop = intensity * 140f * scale * amplification
+                        val handLift = intensity * 90f * scale * amplification
+                        PointF(
+                            basePoint.x + handPop * if (index == 9) -1 else 1, 
+                            basePoint.y - handLift
+                        )
                     }
                     11, 12 -> {
-                        val hipDrop = intensity * 20f
-                        PointF(basePoint.x, basePoint.y + hipDrop)
+                        val hipDrop = intensity * 70f * scale * amplification
+                        val hipSway = intensity * 50f * scale * amplification
+                        PointF(
+                            basePoint.x + hipSway * if (index == 11) -1 else 1,
+                            basePoint.y + hipDrop
+                        )
                     }
                     13, 14 -> {
-                        val kneeBounce = intensity * 30f
+                        val kneeBounce = intensity * 90f * scale * amplification
                         PointF(basePoint.x, basePoint.y + kneeBounce)
+                    }
+                    15, 16 -> {
+                        val footPop = intensity * 70f * scale * amplification
+                        val footSlide = intensity * 40f * scale * amplification
+                        PointF(
+                            basePoint.x + footSlide * if (index == 15) -1 else 1,
+                            basePoint.y + footPop
+                        )
+                    }
+                    0 -> {
+                        val headBob = intensity * 40f * scale * amplification
+                        PointF(basePoint.x, basePoint.y + headBob)
                     }
                     else -> basePoint
                 }
             } else {
-                basePoint
+                val relaxProgress = (beatProgress - 0.25f) / 0.75f
+                val relaxIntensity = 1f - relaxProgress
+                
+                when (index) {
+                    5, 6 -> {
+                        val armReturn = relaxIntensity * 30f * scale * amplification
+                        PointF(
+                            basePoint.x + armReturn * if (index == 5) -1 else 1,
+                            basePoint.y - armReturn * 0.5f
+                        )
+                    }
+                    11, 12 -> {
+                        val hipReturn = relaxIntensity * 20f * scale * amplification
+                        PointF(basePoint.x, basePoint.y + hipReturn)
+                    }
+                    else -> basePoint
+                }
             }
             
             animatedPoints.add(animated)

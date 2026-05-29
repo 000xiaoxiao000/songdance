@@ -15,6 +15,64 @@
         android:gravity="center"
         android:paddingBottom="16dp" />
 
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="#F5F5F5"
+        android:padding="12dp"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="动作帧数设置"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="帧数："
+                android:textSize="14sp" />
+
+            <SeekBar
+                android:id="@+id/seekBarFrameCount"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:max="90"
+                android:progress="30"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp" />
+
+            <TextView
+                android:id="@+id/tvFrameCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="30"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:minWidth="40dp"
+                android:gravity="end" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="范围: 10-100 帧 (推荐 30-60)"
+            android:textSize="12sp"
+            android:textColor="#666666"
+            android:layout_marginTop="4dp" />
+    </LinearLayout>
+
     <Button
         android:id="@+id/btnAIGenerate"
         android:layout_width="match_parent"

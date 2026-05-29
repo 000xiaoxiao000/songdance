@@ -41,13 +41,13 @@ class AIModelManager(private val context: Context) {
     /**
      * 生成唱跳动作帧序列
      * @param inputBitmap 输入的静态图片
-     * @param frameCount 生成的帧数
+     * @param frameCount 生成的帧数（必需参数，根据音乐时长和帧率计算）
      * @param danceStyle 舞蹈风格
      * @return 生成的帧序列
      */
     suspend fun generateDanceFrames(
         inputBitmap: Bitmap,
-        frameCount: Int = 30,
+        frameCount: Int,
         danceStyle: DanceStyle = DanceStyle.POWER
     ): List<Bitmap> = withContext(Dispatchers.IO) {
         if (!isInitialized) {
@@ -86,35 +86,8 @@ class AIModelManager(private val context: Context) {
             }
         }
         
-        val smoothedFrames = if (frames.size >= 3) {
-            Log.d(TAG, "应用平滑处理...")
-            smoothFrameSequence(frames)
-        } else {
-            frames
-        }
-        
-        Log.d(TAG, "成功生成 ${smoothedFrames.size} 帧")
-        smoothedFrames
-    }
-    
-    private fun smoothFrameSequence(frames: List<Bitmap>): List<Bitmap> {
-        if (frames.size < 3) return frames
-        
-        val smoothed = mutableListOf<Bitmap>()
-        smoothed.add(frames[0])
-        
-        for (i in 1 until frames.size - 1) {
-            val blended = imageWarper.blendFrames(
-                imageWarper.blendFrames(frames[i - 1], frames[i], 0.5f),
-                frames[i + 1],
-                0.33f
-            )
-            smoothed.add(blended)
-        }
-        
-        smoothed.add(frames[frames.size - 1])
-        
-        return smoothed
+        Log.d(TAG, "成功生成 ${frames.size} 帧 (无混合处理，保持原图清晰度)")
+        frames
     }
     
     /**

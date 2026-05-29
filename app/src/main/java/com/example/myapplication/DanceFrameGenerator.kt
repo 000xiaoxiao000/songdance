@@ -19,17 +19,18 @@ class DanceFrameGenerator(
     private val aiModel: AIModelManager
 ) {
     
+    private val settingsRepo = OverlaySettingsRepository(context)
+    
     companion object {
         private const val TAG = "DanceFrameGenerator"
         private const val MAX_IMAGE_SIZE = 1024
-        private const val DEFAULT_FRAME_COUNT = 30
     }
     
     /**
      * 生成并保存唱跳动作帧序列
      * @param sourceUri 源图片 URI
      * @param setName 目标图片集名称
-     * @param frameCount 生成的帧数
+     * @param frameCount 生成的帧数（如果为null则从设置中读取）
      * @param danceStyle 舞蹈风格
      * @param progressCallback 进度回调 (当前帧, 总帧数)
      * @return 成功生成的帧数
@@ -37,15 +38,16 @@ class DanceFrameGenerator(
     suspend fun generateAndSave(
         sourceUri: Uri,
         setName: String,
-        frameCount: Int = DEFAULT_FRAME_COUNT,
+        frameCount: Int? = null,
         danceStyle: DanceStyle = DanceStyle.POWER,
         progressCallback: suspend (Int, Int) -> Unit
     ): Result<Int> = withContext(Dispatchers.IO) {
+        val actualFrameCount = frameCount ?: settingsRepo.get().aiFrameCount
         try {
             Log.d(TAG, "开始生成唱跳动作帧序列...")
             
             // 1. 加载并预处理原始图片
-            progressCallback(0, frameCount)
+            progressCallback(0, actualFrameCount)
             val sourceBitmap = loadAndPreprocessBitmap(sourceUri)
             
             if (sourceBitmap == null) {
@@ -65,10 +67,10 @@ class DanceFrameGenerator(
             }
             
             // 3. 生成帧序列
-            Log.d(TAG, "开始生成 $frameCount 帧动作...")
+            Log.d(TAG, "开始生成 $actualFrameCount 帧动作...")
             val frames = aiModel.generateDanceFrames(
                 inputBitmap = sourceBitmap,
-                frameCount = frameCount,
+                frameCount = actualFrameCount,
                 danceStyle = danceStyle
             )
             
@@ -95,7 +97,7 @@ class DanceFrameGenerator(
                 }
                 
                 frame.recycle()
-                progressCallback(index + 1, frameCount)
+                progressCallback(index + 1, actualFrameCount)
             }
             
             Log.d(TAG, "成功保存 $savedCount 帧到图片集 $setName")
