@@ -1,104 +1,155 @@
-
 # Dancing Overlay (Android)
 
 [English](./README_en.md) | [中文](./README.md)
 
-An Android application that shows a draggable floating dancing avatar on top of other apps and reacts to music beats.
+Dancing Overlay is an Android floating-dancer app. It shows a draggable avatar above other apps, captures media playback audio, switches motion based on volume and beats, and can turn a user-uploaded character image into a local AI-generated dancing frame sequence.
 
-## Features
+## Current Features
 
-- Draggable floating overlay (TYPE_APPLICATION_OVERLAY).
-- Foreground service to keep the overlay alive while the app is backgrounded.
-- OpenGL ES rendering pipeline prepared for a runtime avatar renderer, with a built-in PNG fallback sequence (e.g. `dancer_single1.png` ... `dancer_single9.png`).
-- Beat detection implemented with a spectral-flux style onset detector using FFT frequency streams.
-- Audio capture mode:
-  - Playback capture only (Android 10+, requires MediaProjection permission).
-- Settings include:
-  - Beat sensitivity
-  - Avatar size
-  - Avatar opacity
-  - Position lock
-  - Auto-start on boot
-- Guidance for battery optimization (can direct users to whitelist/ignore battery optimizations).
+- **Floating dancer**: Uses `TYPE_APPLICATION_OVERLAY` to draw above other apps; supports dragging and position lock.
+- **Foreground service**: `OverlayService` keeps the overlay alive with a foreground notification and supports hide/show/stop actions.
+- **Playback audio capture**: On Android 10+, uses MediaProjection + AudioPlaybackCapture for media/game audio.
+- **Beat-driven animation**: `BeatDetector` uses FFT / spectral-flux style onset detection and maps audio events to avatar motion.
+- **OpenGL ES rendering**: `OpenGLESView` / `OpenGLESRenderer` apply mesh deformation and beat pulse effects to avatar textures.
+- **Two avatar sets**: Settings can manage Avatar Set 1 / Avatar Set 2 and switch the active floating-avatar style.
+- **Local AI dance-frame generation**: Upload one image, choose 10–100 frames, and generate a coherent dancing sequence with MoveNet pose detection + `pose_driven_generator.tflite`.
+- **Offline-first inference**: Models live under `app/src/main/assets/models/`; the app does not require an external server for inference.
+- **Battery optimization guidance**: Includes an entry point to the system whitelist / ignore battery optimization screen.
 
-## Project structure
+## Requirements
 
-### Core Modules
-- `MainActivity.kt` — Permission flow and main controls.
-- `OverlayService.kt` — Foreground service and overlay lifecycle.
-- `DancerOverlayView.kt` — Floating overlay container and status UI.
+- Android Studio / Gradle Wrapper
+- JDK 17
+- Android project config: `compileSdk 36`, `targetSdk 36`, `minSdk 24`
+- Floating dancer audio capture works best on Android 10 (API 29) and above
+- Package / Application ID: `com.example.myapplication`
 
-### Audio Processing
-- `AudioCaptureManager.kt` — Audio capture loop and source plumbing.
-- `BeatDetector.kt` — FFT-based onset / beat event generator.
-- `FftAnalyzer.kt` — In-app FFT helper.
+## Quick Start
 
-### Avatar Rendering System
-- `OpenGLESView.kt` — OpenGL ES view container.
-- `OpenGLESRenderer.kt` — OpenGL ES renderer main implementation.
-- `OpenGLESRenderer_Legacy.kt` — OpenGL ES renderer legacy version.
-- `OpenGLESMotionController.kt` — Maps beat/audio events to renderer parameters.
-- `OpenGLESFallbackRenderState.kt` — OpenGL ES fallback render state management.
-- `BeatReactiveAvatar.kt` — Beat-reactive avatar logic.
+```bash
+./gradlew :app:assembleDebug
+```
 
-### Avatar Asset Management
-- `AvatarAssets.kt` — Avatar asset definitions.
-- `AvatarLoader.kt` — Avatar loader.
-- `AvatarImageManager.kt` — Avatar image manager.
-- `AvatarImagePagingSource.kt` — Avatar image paging data source.
-- `AvatarImagePagingAdapter.kt` — Avatar image paging adapter.
-- `AvatarUploadActivity.kt` — Avatar upload activity.
-- `ImageCompressor.kt` — Image compression utility.
+You can also open the project in Android Studio and run the `app` module.
 
-### Dance Choreography System
-- `AvatarSpriteChoreographyEngine.kt` — Avatar sprite choreography engine.
-- `RhythmStyleEngine.kt` — Rhythm style engine.
-- `SongDanceStyleResolver.kt` — Song dance style resolver.
-- `DanceStyle.kt` — Dance style definitions.
+First-run flow:
 
-### Settings & Configuration
-- `SettingsActivity.kt` — Settings UI.
-- `OverlaySettings.kt` — Settings model and persistence helpers.
-- `BootCompletedReceiver.kt` — Optional boot-start receiver.
-- `PowerOptimizationHelper.kt` — Battery optimization helper.
+1. Install and open the app.
+2. Tap **Grant Overlay Permission** and allow drawing over other apps.
+3. Tap **Start Floating Dancer**.
+4. Grant microphone permission, notification permission on Android 13+, and the system capture prompt.
+5. Play audio in a supported music/video/game app. The floating dancer reacts to audio activity and beats.
+6. Open **Settings** to tune sensitivity, size, opacity, position lock, auto-start, and related options.
 
-## How to build & run
+## Avatar Sets and AI Generation
 
-1. (Optional) If you want to use the runtime OpenGL ES renderer, place model/texture assets into `app/src/main/assets/`.
-2. Place the floating-avatar PNG resources directly in:
+The settings page provides two custom avatar-set managers:
 
-   - `app/src/main/res/drawable/avatar/`
-   - `app/src/main/res/drawable/avatar1/`
+- **Manage Avatar Set 1**: Default floating-avatar source, stored in the app-private directory `files/custom_avatars/set1/`.
+- **Manage Avatar Set 2**: Alternate avatar source, stored in the app-private directory `files/custom_avatars/set2/`.
 
-   Use `dancer_single_begin.png` as the startup sprite, `dancer_single_end.png` as the idle/ending sprite, and `dancer_single1.png`, `dancer_single2.png` ... as the dance frame sequence.
+The avatar-set page supports:
 
-   > Note: the old `app/src/main/assets/avatar*` directories are no longer used as the source of avatar images.
-   > The current build exposes `res/drawable/avatar*` as path-readable raw files for runtime loading.
+- Single-image upload, batch upload, preview, deletion, and clear-all.
+- Frame count selection from 10 to 100, defaulting to 30.
+- Tap **AI Generate Dancing Motion**, select one character image, and generate `dancer_single1.png`, `dancer_single2.png`, ... frame sequences.
+- Each AI generation clears old `dancer_single*.png` generated frames in the target set to avoid mixing old and new motion.
 
-3. Build and install via Android Studio or with the Gradle wrapper.
-4. Open the app and grant the required permissions:
-   - Overlay (draw over other apps)
-   - Recording / audio capture (when prompted)
-5. Tap "Start Floating Dancer" to launch the overlay.
-6. Accept the system capture prompt to allow playback capture.
-7. Play music in a supported player. The overlay will react to beats and audio to drive avatar animations; PNG fallbacks are used until the runtime OpenGL renderer is initialized.
-8. If notification access is granted, the overlay can also display the current song title/artist (used by optional dance-style heuristics).
-9. Open Settings to tune sensitivity, size, opacity, position lock, and auto-start behavior.
+AI inference pipeline:
 
-## Notes & limitations
+```text
+Uploaded image
+  -> ImageCompressor compression / EXIF rotation fix
+  -> PoseDetector 17-keypoint detection (MoveNet first, simplified pose fallback)
+  -> AvatarStyleFrameRenderer / TruePoseDrivenModel target-pose frame generation
+  -> DanceFrameGenerator saves frames into the active avatar set
+  -> DancerOverlayView loads and plays the frame sequence
+```
 
-- Android enforces policies and permission restrictions on playback capture; some apps or streams may not be capturable due to DRM or upstream policy.
-- Playback capture is supported on Android 10 (API 29) and above.
+## Model Assets
 
-## Payment / Support
+Current model paths:
 
-If you'd like to support the project, scan the payment QR code below.
+- `app/src/main/assets/models/movenet_thunder.tflite`: MoveNet single-person pose detection model.
+- `app/src/main/assets/models/pose_driven_generator.tflite`: Local pose-driven image generation model.
 
-Thank you for recognizing the value of this project — your support is the fuel that keeps it being updated.
+`PoseDetector` tries to load `movenet_thunder.tflite` first. If loading fails, it falls back to a simplified pose estimator based on image proportions.
+
+`TruePoseDrivenModel` expects a compatible TFLite image-generation model:
+
+- Inputs are NHWC image tensors.
+- At least two logical inputs are required: reference/source image and target pose/condition/skeleton.
+- An optional source-pose input is supported.
+- Output must be an RGB/RGBA image tensor.
+
+See these files for model training, distillation, and validation details:
+
+- `docs/pose_driven_generator_contract.md`
+- `docs/pose_driven_model_options.md`
+- `docs/building_a_pose_driven_model.md`
+- `tools/pose_model_factory/README.md`
+
+Validate a model against the app contract with:
+
+```bash
+python3 tools/pose_driven_model/inspect_pose_driven_tflite.py \
+  app/src/main/assets/models/pose_driven_generator.tflite
+```
+
+## Project Structure
+
+```text
+app/src/main/java/com/example/myapplication/
+├── MainActivity.kt                    # Permission flow and main screen
+├── OverlayService.kt                  # Foreground service, overlay lifecycle, audio callbacks
+├── DancerOverlayView.kt               # Overlay UI, dragging, frame playback
+├── AudioCaptureManager.kt             # MediaProjection playback capture
+├── BeatDetector.kt / FftAnalyzer.kt   # FFT beat detection
+├── OpenGLESView.kt / OpenGLESRenderer.kt
+│                                      # OpenGL ES avatar rendering and mesh deformation
+├── AvatarLoader.kt                    # Avatar-set loading, caching, preprocessing
+├── AvatarImageManager.kt              # User avatar-set file management
+├── AvatarUploadActivity.kt            # Upload, batch management, AI-generation entry
+├── AIModelManager.kt                  # Pose detection and dance-frame generation controller
+├── PoseDetector.kt                    # MoveNet / simplified pose detection
+├── TruePoseDrivenModel.kt             # Real TFLite pose-driven generator adapter
+├── DanceFrameGenerator.kt             # Saves generated frames into avatar sets
+├── AvatarSpriteChoreographyEngine.kt  # Sprite-frame choreography
+├── RhythmStyleEngine.kt               # Rhythm-style calculation
+├── SettingsActivity.kt                # Settings screen
+├── OverlaySettings.kt                 # Settings persistence
+└── BootCompletedReceiver.kt           # Optional boot auto-start
+```
+
+Other directories:
+
+- `app/src/main/assets/models/`: TFLite models.
+- `app/src/main/assets/lottie/`: Lottie assets.
+- `app/src/main/res/xml/root_preferences.xml`: Settings screen configuration.
+- `docs/`: Pose-driven model documentation.
+- `tools/pose_model_factory/`: Teacher-model distillation and student-model export tools.
+- `tools/pose_driven_model/`: TFLite model inspection tools.
+- `effect_picture/`: Project screenshots.
+
+## Permissions
+
+The app declares and uses these main permissions:
+
+- `SYSTEM_ALERT_WINDOW`: Draw the floating overlay.
+- `RECORD_AUDIO`: Read audio data together with playback capture.
+- `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_MEDIA_PROJECTION`: Keep playback capture running in a foreground service.
+- `POST_NOTIFICATIONS`: Foreground-service notification on Android 13+.
+- `RECEIVE_BOOT_COMPLETED`: Optional boot auto-start.
+
+## Notes
+
+- Android playback capture is limited by OS version, app policy, and DRM; some players or streams cannot be captured.
+- Android 14+ is stricter about MediaProjection foreground services; the service must be started with user-authorized capture data.
+- AI frame generation can be memory- and time-intensive. Use clear images with a complete, reasonably sized subject.
+- Uploaded images larger than 5 MB are rejected for AI generation.
+- The current release build uses a debug-keystore fallback signing config. Replace it with production signing before publishing.
 
 ## Screenshots
-
-The images below illustrate the overlay and example behavior (in order):
 
 <img src="effect_picture/effect_picture1.jpg" alt="Screenshot 1" width="240" style="max-width:100%;height:auto;" />
 
