@@ -31,6 +31,7 @@
 /.kotlin/
 .DS_Store
 **/.DS_Store
+.venv_pose_model/
 /build
 /app/build
 /captures
@@ -40,5 +41,4 @@ local.properties
 /local.properties
 *.ipr
 *.iws
-
 
