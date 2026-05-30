@@ -54,6 +54,10 @@ android {
         }
     }
 
+    androidResources {
+        noCompress += "tflite"
+    }
+
 }
 
 dependencies {

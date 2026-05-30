@@ -13,8 +13,6 @@ import kotlinx.coroutines.withContext
 class AIModelManager(private val context: Context) {
     
     private val poseDetector = PoseDetector(context)
-    private val keypointAnimator = KeypointAnimator()
-    private val imageWarper = ImageWarper()
     private val avatarStyleFrameRenderer = AvatarStyleFrameRenderer(context)
     private var isInitialized = false
     val isUsingLocalModel: Boolean
@@ -69,9 +67,9 @@ class AIModelManager(private val context: Context) {
             frameCount = frameCount
         )
         if (avatarStyleFrames.isEmpty()) {
-            throw IllegalStateException("本地图像生成/风格迁移模型不可用，无法生成 avatar 风格唱跳动作")
+            throw IllegalStateException("缺少真正的本地姿态驱动图像生成模型 app/src/main/assets/models/pose_driven_generator.tflite，无法逐帧重绘唱跳动作")
         }
-        Log.d(TAG, "成功生成 ${avatarStyleFrames.size} 帧 avatar 风格唱跳动作")
+        Log.d(TAG, "成功使用本地姿态驱动生成模型逐帧重绘 ${avatarStyleFrames.size} 帧唱跳动作")
         return@withContext avatarStyleFrames
     }
     
