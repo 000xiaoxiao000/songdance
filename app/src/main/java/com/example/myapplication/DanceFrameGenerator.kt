@@ -97,6 +97,12 @@ class DanceFrameGenerator(
                 progressCallback(index + 1, actualFrameCount)
             }
             
+            if (savedCount == 0) {
+                return@withContext Result.failure(
+                    Exception("AI 已完成推理但 0 张图片保存成功，请检查应用存储空间或文件写入权限")
+                )
+            }
+
             Log.d(TAG, "成功保存 $savedCount 帧到图片集 $setName")
             Result.success(savedCount)
             

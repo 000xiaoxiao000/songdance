@@ -17,6 +17,9 @@ class AIModelManager(private val context: Context) {
     private var isInitialized = false
     val isUsingLocalModel: Boolean
         get() = poseDetector.isUsingLocalModel
+
+    var lastGenerationBackend: String = "未生成"
+        private set
     
     companion object {
         private const val TAG = "AIModelManager"
@@ -66,7 +69,8 @@ class AIModelManager(private val context: Context) {
             detectedPose = detectedPose,
             frameCount = frameCount
         )
-        Log.d(TAG, "成功生成 ${avatarStyleFrames.size} 帧上传人物重定向动作")
+        lastGenerationBackend = avatarStyleFrameRenderer.lastBackendName
+        Log.d(TAG, "成功生成 ${avatarStyleFrames.size} 帧上传人物重定向动作 (后端: $lastGenerationBackend)")
         return@withContext avatarStyleFrames
     }
     

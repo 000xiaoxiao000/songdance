@@ -37,6 +37,9 @@ class TruePoseDrivenModel(private val context: Context) {
     private var inputs: List<TensorSpec> = emptyList()
     private var output: TensorSpec? = null
 
+    var loadFailureMessage: String? = null
+        private set
+
     val isReady: Boolean
         get() = interpreter != null && output != null
 
@@ -55,11 +58,13 @@ class TruePoseDrivenModel(private val context: Context) {
             require(inputs.size >= 2) { "pose-driven model requires at least reference + target pose inputs" }
             require(output?.channels in 3..4) { "pose-driven model output must be RGB/RGBA" }
             interpreter = candidate
+            loadFailureMessage = null
             Log.d(TAG, "Loaded real pose-driven generation model: $MODEL_PATH")
             true
         } catch (e: Exception) {
             release()
-            Log.i(TAG, "No real pose-driven generation model bundled; using lightweight retargeting")
+            loadFailureMessage = e.message ?: e.javaClass.simpleName
+            Log.i(TAG, "No compatible real pose-driven generation model bundled: $loadFailureMessage")
             false
         }
     }
@@ -97,7 +102,8 @@ class TruePoseDrivenModel(private val context: Context) {
             outputBuffer.rewind()
             resizeOutput(bufferToBitmap(outputBuffer, activeOutput), outputWidth, outputHeight)
         } catch (e: Exception) {
-            Log.e(TAG, "Real pose-driven model inference failed", e)
+            loadFailureMessage = e.message ?: e.javaClass.simpleName
+            Log.e(TAG, "Real pose-driven model inference failed: $loadFailureMessage", e)
             null
         }
     }

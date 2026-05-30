@@ -5,9 +5,11 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import android.view.LayoutInflater
@@ -18,6 +20,8 @@ import android.widget.ImageView
 import android.widget.TextView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -31,6 +35,8 @@ class AvatarUploadActivity : AppCompatActivity() {
     private lateinit var aiModelManager: AIModelManager
     private lateinit var danceFrameGenerator: DanceFrameGenerator
     private var selectedFrameCount = 30
+    private var aiGenerationJob: Job? = null
+    private var isAIGenerating = false
     
     private val pickImageLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -49,13 +55,19 @@ class AvatarUploadActivity : AppCompatActivity() {
     private val pickImageForAIGenerationLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let { handleAIGeneration(it) }
+        if (uri == null) {
+            updateAIStatus("已取消选择图片，未开始 AI 生成")
+        } else {
+            handleAIGeneration(uri)
+        }
     }
     
     companion object {
         private const val EXTRA_SET_NAME = "set_name"
         private const val MAX_FILE_SIZE_MB = 5
         private const val MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+        private const val AI_STATUS_PREFS = "ai_generation_status"
+        private const val AI_STATUS_IN_PROGRESS = "__in_progress__"
         
         fun createIntent(activity: Activity, setName: String): Intent {
             return Intent(activity, AvatarUploadActivity::class.java).apply {
@@ -74,7 +86,9 @@ class AvatarUploadActivity : AppCompatActivity() {
         danceFrameGenerator = DanceFrameGenerator(this, aiModelManager)
         
         setupViews()
+        setupBackHandling()
         loadImages()
+        restoreLastAIStatus()
     }
     
     private fun setupViews() {
@@ -141,6 +155,71 @@ class AvatarUploadActivity : AppCompatActivity() {
             }
         )
         recyclerView.adapter = adapter
+    }
+
+    private fun setupBackHandling() {
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (isAIGenerating) {
+                    showCancelAIGenerationDialog()
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
+    }
+
+    private fun setAIGenerationInProgress(inProgress: Boolean) {
+        isAIGenerating = inProgress
+        findViewById<Button>(R.id.btnAIGenerate).isEnabled = !inProgress
+        findViewById<Button>(R.id.btnAddImage).isEnabled = !inProgress
+        findViewById<Button>(R.id.btnAddMultiple).isEnabled = !inProgress
+        findViewById<Button>(R.id.btnBatchDelete).isEnabled = !inProgress
+        findViewById<Button>(R.id.btnClearAll).isEnabled = !inProgress
+    }
+
+    private fun updateAIStatus(message: String, persist: Boolean = true) {
+        findViewById<TextView>(R.id.tvAIStatus).apply {
+            text = message
+            visibility = View.VISIBLE
+        }
+        if (persist) {
+            aiStatusPrefs().edit().putString(aiStatusKey(), message).apply()
+        }
+    }
+
+    private fun markAIGenerationStarted() {
+        aiStatusPrefs().edit().putString(aiStatusKey(), AI_STATUS_IN_PROGRESS).apply()
+    }
+
+    private fun restoreLastAIStatus() {
+        val lastStatus = aiStatusPrefs().getString(aiStatusKey(), null) ?: return
+        val message = if (lastStatus == AI_STATUS_IN_PROGRESS) {
+            "上次 AI 生成未正常结束，可能被系统中断或自研 pose-driven 模型崩溃；请重新生成，并查看 Logcat 获取原因"
+        } else {
+            lastStatus
+        }
+        updateAIStatus(message, persist = lastStatus != AI_STATUS_IN_PROGRESS)
+    }
+
+    private fun aiStatusPrefs() = getSharedPreferences(AI_STATUS_PREFS, Context.MODE_PRIVATE)
+
+    private fun aiStatusKey() = "last_status_$currentSetName"
+
+    private fun showCancelAIGenerationDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("AI 正在生成")
+            .setMessage("本地图像大模型正在处理图片，离开页面会中断本次生成。")
+            .setPositiveButton("继续等待", null)
+            .setNegativeButton("取消生成并返回") { _, _ ->
+                aiGenerationJob?.cancel()
+                dismissProgressDialog()
+                setAIGenerationInProgress(false)
+                updateAIStatus("已取消 AI 生成，未保存新图片")
+                finish()
+            }
+            .show()
     }
 
     private fun openImagePreview(imageName: String) {
@@ -510,7 +589,7 @@ class AvatarUploadActivity : AppCompatActivity() {
     private fun showAIGenerateDialog() {
         AlertDialog.Builder(this)
             .setTitle("AI 生成唱跳动作")
-            .setMessage("将为图片中的人物生成 $selectedFrameCount 帧唱跳动作序列\n\n请选择一张包含人物的图片")
+            .setMessage("将使用手机本地大模型生成唱跳动作。首次准备模型可能较慢，请不要离开页面。\n\n请选择一张包含清晰人物的图片。")
             .setPositiveButton("选择图片") { _, _ ->
                 pickImageForAIGenerationLauncher.launch("image/*")
             }
@@ -519,49 +598,99 @@ class AvatarUploadActivity : AppCompatActivity() {
     }
     
     private fun handleAIGeneration(uri: Uri) {
+        if (isAIGenerating) {
+            updateAIStatus("AI 正在生成中，请等待当前任务完成")
+            return
+        }
+
         val fileSize = getFileSize(uri)
         if (fileSize > MAX_FILE_SIZE_BYTES) {
             val sizeMB = String.format("%.2f", fileSize / (1024f * 1024f))
             showFileSizeErrorDialog(sizeMB)
+            updateAIStatus("AI 生成未开始：图片大小 ${sizeMB}MB，超过 ${MAX_FILE_SIZE_MB}MB")
             return
         }
-        
-        showProgressDialog("AI 正在生成唱跳动作...", selectedFrameCount, 0)
-        
-        CoroutineScope(Dispatchers.Main).launch {
-            val result = danceFrameGenerator.generateAndSave(
-                sourceUri = uri,
-                setName = currentSetName,
-                frameCount = selectedFrameCount,
-                danceStyle = DanceStyle.POWER,
-                progressCallback = { current, total ->
-                    withContext(Dispatchers.Main) {
-                        val progressMessage = "AI 正在生成唱跳动作... ($current/$total)"
-                        progressDialog?.setMessage(progressMessage)
+
+        setAIGenerationInProgress(true)
+        markAIGenerationStarted()
+        updateAIStatus("AI 生成中：正在加载上传图片，请留在当前页面", persist = false)
+        showProgressDialog("AI 正在生成唱跳动作，请不要离开页面...", selectedFrameCount, 0)
+
+        aiGenerationJob = lifecycleScope.launch {
+            try {
+                val result = danceFrameGenerator.generateAndSave(
+                    sourceUri = uri,
+                    setName = currentSetName,
+                    frameCount = selectedFrameCount,
+                    danceStyle = DanceStyle.POWER,
+                    progressCallback = { current, total ->
+                        withContext(Dispatchers.Main) {
+                            val progressMessage = when (current) {
+                                0 -> "AI 正在准备本地大模型，请不要离开页面..."
+                                else -> "AI 正在生成并保存动作帧... ($current/$total)"
+                            }
+                            progressDialog?.setMessage(progressMessage)
+                            updateAIStatus(progressMessage, persist = false)
+                        }
                     }
+                )
+
+                dismissProgressDialog()
+
+                result.onSuccess { frameCount ->
+                    AvatarLoader.clearCacheForDirectory(currentSetName)
+                    val imageCount = AvatarImageManager.getAvailableImageNames(this@AvatarUploadActivity, currentSetName).size
+                    val poseMode = if (aiModelManager.isUsingLocalModel) "本地 MoveNet 模型" else "简化姿态模型"
+                    val generatorMode = aiModelManager.lastGenerationBackend
+                    updateAIStatus("AI 生成成功：已保存 $frameCount 帧，当前图片集共 $imageCount 张")
+                    showSuccessDialog(
+                        "生成成功",
+                        "已使用${poseMode} + ${generatorMode}生成 $frameCount 帧连贯唱跳动作图片\n\n图片已保存到当前图片集，可点击下方缩略图预览。"
+                    )
+                    loadImages()
+                }.onFailure { error ->
+                    showGenerationError(error)
                 }
-            )
-            
-            dismissProgressDialog()
-            
-            result.onSuccess { frameCount ->
-                AvatarLoader.clearCacheForDirectory(currentSetName)
-                val modelMode = if (aiModelManager.isUsingLocalModel) "本地 MoveNet 模型" else "简化姿态模型"
-                showSuccessDialog(
-                    "生成成功",
-                    "已使用${modelMode}生成 $frameCount 帧连贯唱跳动作图片\n\n图片已保存到当前图片集"
-                )
-                loadImages()
-            }.onFailure { error ->
-                showErrorDialog(
-                    "生成失败",
-                    error.message ?: "AI 生成过程中出现未知错误"
-                )
+            } catch (error: Throwable) {
+                dismissProgressDialog()
+                if (error is CancellationException) {
+                    updateAIStatus("AI 生成已取消，未保存新图片")
+                    return@launch
+                }
+                showGenerationError(error)
+            } finally {
+                setAIGenerationInProgress(false)
+                aiGenerationJob = null
             }
         }
     }
+
+    private fun showGenerationError(error: Throwable) {
+        val rootMessage = rootCauseMessage(error)
+        val message = buildString {
+            append(rootMessage)
+            append("\n\n结果：未成功生成时不会保存新图片，当前仍停留在图片集页面。")
+            append("\n\n建议：")
+            append("\n1. 请确认图片中人物清晰、尽量全身可见。")
+            append("\n2. 如果刚安装后首次生成，请预留足够存储空间并等待本地模型初始化。")
+            append("\n3. 如果仍返回上一页或 APP 闪退，请抓取 Logcat：TruePoseDrivenModel / AvatarStyleFrameRenderer / AndroidRuntime。")
+        }
+        updateAIStatus("AI 生成失败：$rootMessage")
+        showErrorDialog("生成失败", message)
+    }
+
+    private fun rootCauseMessage(error: Throwable): String {
+        var root = error
+        while (root.cause != null && root.cause !== root) {
+            root = root.cause!!
+        }
+        return root.message?.takeIf { it.isNotBlank() } ?: root.javaClass.simpleName
+    }
+
+
     
     override fun onDestroy() {
+        aiGenerationJob?.cancel()
         super.onDestroy()
         aiModelManager.release()
     }

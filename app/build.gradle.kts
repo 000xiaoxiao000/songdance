@@ -76,9 +76,6 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
-    // MediaPipe for pose detection
-    implementation("com.google.mediapipe:tasks-vision:0.10.8")
-
     // Coroutines for async processing
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 

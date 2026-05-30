@@ -83,6 +83,17 @@
         android:backgroundTint="#FF6B35"
         android:layout_marginBottom="8dp" />
 
+    <TextView
+        android:id="@+id/tvAIStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:background="#FFF3E0"
+        android:padding="8dp"
+        android:textColor="#6D3B00"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
