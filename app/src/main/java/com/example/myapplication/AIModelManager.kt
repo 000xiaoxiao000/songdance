@@ -55,10 +55,10 @@ class AIModelManager(private val context: Context) {
             throw IllegalStateException("AI 模型未初始化")
         }
         
-        Log.d(TAG, "开始使用${if (isUsingLocalModel) "本地模型" else "简化模型"}生成 $frameCount 帧唱跳动作 (风格: $danceStyle)...")
-        
+        Log.d(TAG, "开始生成 $frameCount 帧唱跳动作 (风格: $danceStyle)...")
+
         val detectedPose = poseDetector.detectPose(inputBitmap)
-        
+
         Log.d(TAG, "姿态检测成功 (置信度: ${String.format("%.2f", detectedPose.confidence)})")
 
         val avatarStyleFrames = avatarStyleFrameRenderer.generateFrames(
@@ -66,10 +66,7 @@ class AIModelManager(private val context: Context) {
             detectedPose = detectedPose,
             frameCount = frameCount
         )
-        if (avatarStyleFrames.isEmpty()) {
-            throw IllegalStateException("缺少真正的本地姿态驱动图像生成模型 app/src/main/assets/models/pose_driven_generator.tflite，无法逐帧重绘唱跳动作")
-        }
-        Log.d(TAG, "成功使用本地姿态驱动生成模型逐帧重绘 ${avatarStyleFrames.size} 帧唱跳动作")
+        Log.d(TAG, "成功生成 ${avatarStyleFrames.size} 帧上传人物重定向动作")
         return@withContext avatarStyleFrames
     }
     

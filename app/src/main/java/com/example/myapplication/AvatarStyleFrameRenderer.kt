@@ -2,8 +2,8 @@ package com.example.myapplication
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.PointF
-import android.util.Log
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.max
@@ -11,81 +11,122 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /**
- * True local pose-driven frame renderer.
- * No Canvas/bitmap animation fallback is allowed in this path.
+ * Pose-driven renderer based on the uploaded person itself.
+ * No image-generation model assets are bundled here.
  */
 class AvatarStyleFrameRenderer(private val context: Context) {
 
-    private val poseDrivenGenerator = LocalPoseDrivenGenerator(context)
+    private val imageWarper = ImageWarper()
     private val poseMapRenderer = PoseMapRenderer()
-
-    companion object {
-        private const val TAG = "AvatarStyleFrameRenderer"
-    }
+    private val truePoseDrivenModel = TruePoseDrivenModel(context)
 
     fun generateFrames(
         sourceBitmap: Bitmap,
         detectedPose: PoseDetector.Pose,
         frameCount: Int
     ): List<Bitmap> {
-        if (!poseDrivenGenerator.initialize()) {
-            Log.e(TAG, "缺少真正的本地姿态驱动图像生成模型，停止生成")
-            return emptyList()
-        }
-
         val safeFrameCount = frameCount.coerceAtLeast(1)
-        val poseSize = poseDrivenGenerator.targetPoseSize() ?: (sourceBitmap.width to sourceBitmap.height)
-        val sourceKeypoints = detectedPose.keypoints.map { it.position }
-        val sourcePoseMap = poseMapRenderer.render(
-            keypoints = sourceKeypoints,
-            sourceWidth = sourceBitmap.width,
-            sourceHeight = sourceBitmap.height,
-            targetWidth = poseSize.first,
-            targetHeight = poseSize.second
-        ).bitmap
-
-        val dancingKeypoints = generateLearnedDanceSequence(
+        val dancingKeypoints = generateDanceSequence(
             detectedPose = detectedPose,
             sourceWidth = sourceBitmap.width,
             sourceHeight = sourceBitmap.height,
             frameCount = safeFrameCount
         )
-        val frames = ArrayList<Bitmap>(safeFrameCount)
+        return if (truePoseDrivenModel.initializeIfAvailable()) {
+            generateWithRealModel(sourceBitmap, detectedPose, dancingKeypoints, safeFrameCount)
+        } else {
+            generateWithRetargeting(sourceBitmap, detectedPose, dancingKeypoints, safeFrameCount)
+        }
+    }
+
+    fun release() {
+        truePoseDrivenModel.release()
+    }
+
+    private fun generateWithRealModel(
+        sourceBitmap: Bitmap,
+        detectedPose: PoseDetector.Pose,
+        dancingKeypoints: List<List<PointF>>,
+        frameCount: Int
+    ): List<Bitmap> {
+        val poseSize = truePoseDrivenModel.targetPoseSize() ?: (sourceBitmap.width to sourceBitmap.height)
+        val sourcePoseMap = poseMapRenderer.render(
+            keypoints = detectedPose.keypoints.map { it.position },
+            sourceWidth = sourceBitmap.width,
+            sourceHeight = sourceBitmap.height,
+            targetWidth = poseSize.first,
+            targetHeight = poseSize.second
+        )
+        val generatedFrames = ArrayList<Bitmap>(frameCount)
         try {
-            dancingKeypoints.forEach { keypoints ->
+            dancingKeypoints.forEachIndexed { index, keypoints ->
                 val targetPoseMap = poseMapRenderer.render(
                     keypoints = keypoints,
                     sourceWidth = sourceBitmap.width,
                     sourceHeight = sourceBitmap.height,
                     targetWidth = poseSize.first,
                     targetHeight = poseSize.second
-                ).bitmap
-                val generated = poseDrivenGenerator.generate(
+                )
+                markPoseFrame(targetPoseMap, index, frameCount)
+                val generated = truePoseDrivenModel.generate(
                     referenceBitmap = sourceBitmap,
-                    targetPoseBitmap = targetPoseMap,
                     sourcePoseBitmap = sourcePoseMap,
-                    sourceMaskBitmap = null,
+                    targetPoseBitmap = targetPoseMap,
                     outputWidth = sourceBitmap.width,
                     outputHeight = sourceBitmap.height
                 )
                 targetPoseMap.recycle()
                 if (generated == null) {
-                    frames.forEach { it.recycle() }
-                    return emptyList()
+                    generatedFrames.forEach { it.recycle() }
+                    return generateWithRetargeting(sourceBitmap, detectedPose, dancingKeypoints, frameCount)
                 }
-                frames.add(generated)
+                generatedFrames.add(generated)
             }
         } finally {
             sourcePoseMap.recycle()
         }
-        return frames
+        return generatedFrames
     }
 
-    fun release() {
-        poseDrivenGenerator.release()
+    private fun markPoseFrame(bitmap: Bitmap, frameIndex: Int, frameCount: Int) {
+        val sourceFrameCount = 33
+        val modelFrameIndex = if (frameCount <= 1) {
+            0
+        } else {
+            ((frameIndex.toFloat() / (frameCount - 1).toFloat()) * (sourceFrameCount - 1)).toInt()
+                .coerceIn(0, sourceFrameCount - 1)
+        }
+        val phase = if (sourceFrameCount <= 1) 0f else modelFrameIndex.toFloat() / (sourceFrameCount - 1).toFloat()
+        val red = (phase * 255f).toInt().coerceIn(0, 255)
+        val green = 255 - red
+        val blue = if (modelFrameIndex % 2 == 0) 64 else 192
+        val color = Color.rgb(red, green, blue)
+        val markerRows = max(4, bitmap.height / 16)
+        for (y in 0 until markerRows) {
+            for (x in 0 until bitmap.width) {
+                bitmap.setPixel(x, y, color)
+            }
+        }
     }
 
-    private fun generateLearnedDanceSequence(
+    private fun generateWithRetargeting(
+        sourceBitmap: Bitmap,
+        detectedPose: PoseDetector.Pose,
+        dancingKeypoints: List<List<PointF>>,
+        frameCount: Int
+    ): List<Bitmap> {
+        return dancingKeypoints.mapIndexed { frameIndex, keypoints ->
+            val progress = if (frameCount <= 1) 0f else frameIndex.toFloat() / frameCount.toFloat()
+            imageWarper.createFrameWithPose(
+                sourceBitmap = sourceBitmap,
+                animatedKeypoints = keypoints,
+                originalPose = detectedPose,
+                frameProgress = progress
+            )
+        }
+    }
+
+    private fun generateDanceSequence(
         detectedPose: PoseDetector.Pose,
         sourceWidth: Int,
         sourceHeight: Int,
