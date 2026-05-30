@@ -20,15 +20,31 @@ Dancing Overlay is an Android floating-dancer app. It shows a draggable avatar a
 
 - Android Studio / Gradle Wrapper
 - JDK 17
+- Git LFS for large repository assets
 - Android project config: `compileSdk 36`, `targetSdk 36`, `minSdk 24`
 - Floating dancer audio capture works best on Android 10 (API 29) and above
 - Package / Application ID: `com.example.myapplication`
 
 ## Quick Start
 
+For users:
+
 ```bash
+git clone https://github.com/000xiaoxiao000/songdance.git
+cd songdance
+git lfs install
+git lfs pull
 ./gradlew :app:assembleDebug
 ```
+
+> The repository includes `.lfsconfig`, which disables the GitHub-unsupported LFS locking check. Read-only clone and build flows do not require the author's GitHub credentials.
+
+For contributors:
+
+- Fork the repository and open a PR, or point `origin` to a remote where you have write access.
+- To push directly to `000xiaoxiao000/songdance`, configure your own GitHub HTTPS token or SSH key first.
+- SSH remotes are recommended to avoid IDE askpass credential prompts: `git remote set-url origin git@github.com:000xiaoxiao000/songdance.git`.
+- If you only want to build or run the project, push access is not required.
 
 You can also open the project in Android Studio and run the `app` module.
 
@@ -95,6 +111,46 @@ Validate a model against the app contract with:
 python3 tools/pose_driven_model/inspect_pose_driven_tflite.py \
   app/src/main/assets/models/pose_driven_generator.tflite
 ```
+
+## AI Model Training (Optional)
+
+Regular users do not need to train a model. After cloning the repository, pulling Git LFS assets, and building the APK, they can use the included local inference resources. The training flow is mainly for two groups:
+
+- **Advanced users**: Replace `pose_driven_generator.tflite` to better match their character style, motion style, or device-performance target.
+- **Contributors/maintainers**: Reproduce, improve, or submit a new lightweight on-device model.
+
+The recommended training path is an offline teacher model plus a lightweight student model:
+
+```text
+Run a pose-guided teacher model on a desktop/GPU machine
+  -> Build a reference image / source pose / target pose / teacher frame dataset
+  -> Train or distill a lightweight student model
+  -> Export app/src/main/assets/models/pose_driven_generator.tflite
+  -> Validate the TFLite input/output contract with the inspection script
+```
+
+Note: diffusion-based video/image animation models such as MimicMotion, MusePose, MagicAnimate, and AnimateAnyone are usually large and GPU-heavy, so they are not suitable for direct APK packaging. They are better used as offline teacher models; the app should only package a lightweight TFLite student model that can run on-device.
+
+Dataset recommendation: prepare 200+ different person/character references, with 16–72 dancing frames per reference, covering large poses such as waving, jumping, kicking, and turning. Training with a single character or a small image set usually overfits and will not generalize to arbitrary uploaded people.
+
+Training entry points:
+
+```bash
+bash tools/pose_model_factory/prepare_mimicmotion_teacher.sh
+python3 tools/pose_model_factory/build_distill_dataset.py \
+  --teacher-output build/pose_teacher/outputs \
+  --dataset build/pose_student_dataset \
+  --size 256
+python3 tools/pose_model_factory/train_pose_student.py \
+  --dataset build/pose_student_dataset \
+  --tflite app/src/main/assets/models/pose_driven_generator.tflite \
+  --size 256 \
+  --epochs 80
+python3 tools/pose_driven_model/inspect_pose_driven_tflite.py \
+  app/src/main/assets/models/pose_driven_generator.tflite
+```
+
+For complete training guidance, model choices, data requirements, and export contracts, see `docs/building_a_pose_driven_model.md` and `tools/pose_model_factory/README.md`.
 
 ## Project Structure
 

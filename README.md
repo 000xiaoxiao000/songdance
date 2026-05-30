@@ -20,15 +20,31 @@ Dancing Overlay 是一个 Android 悬浮舞者应用：它可以在其他应用�
 
 - Android Studio / Gradle Wrapper
 - JDK 17
+- Git LFS（用于拉取仓库中的大文件资源）
 - Android Gradle Plugin 项目配置：`compileSdk 36`、`targetSdk 36`、`minSdk 24`
 - 悬浮舞者音频捕获：Android 10（API 29）及以上效果最佳
 - 包名 / Application ID：`com.example.myapplication`
 
 ## 快速运行
 
+面向普通使用者：
+
 ```bash
+git clone https://github.com/000xiaoxiao000/songdance.git
+cd songdance
+git lfs install
+git lfs pull
 ./gradlew :app:assembleDebug
 ```
+
+> 仓库已包含 `.lfsconfig`，会关闭 GitHub 不支持的 LFS locking 校验；只读 clone 和构建不需要配置作者的 GitHub 凭据。
+
+面向贡献者：
+
+- Fork 仓库后提交 PR，或把 `origin` 改成你自己有写权限的远端。
+- 如果要直接 push 到 `000xiaoxiao000/songdance`，需要先配置你自己的 GitHub HTTPS token 或 SSH key。
+- 推荐使用 SSH 远端避免 IDE askpass 凭据弹窗问题：`git remote set-url origin git@github.com:000xiaoxiao000/songdance.git`。
+- 如果只想构建/运行项目，不需要 push 权限。
 
 也可以直接使用 Android Studio 打开项目并运行 `app` 模块。
 
@@ -95,6 +111,46 @@ AI 推理链路：
 python3 tools/pose_driven_model/inspect_pose_driven_tflite.py \
   app/src/main/assets/models/pose_driven_generator.tflite
 ```
+
+## AI 模型训练（可选）
+
+普通使用者不需要训练模型：clone 仓库、拉取 Git LFS 资源并构建 APK 后，即可使用项目随附的本地推理资源。训练流程主要面向两类人：
+
+- **进阶使用者**：希望替换 `pose_driven_generator.tflite`，让生成效果更符合自己的角色风格、动作风格或设备性能目标。
+- **贡献者/维护者**：希望复现、改进或提交新的轻量端侧模型。
+
+推荐训练路线是“离线教师模型 + 轻量学生模型”：
+
+```text
+电脑/GPU 上运行 pose-guided 教师模型生成样本
+  -> 整理 reference image / source pose / target pose / teacher frame 数据集
+  -> 训练或蒸馏轻量学生模型
+  -> 导出 app/src/main/assets/models/pose_driven_generator.tflite
+  -> 用检查脚本验证 TFLite 输入输出契约
+```
+
+注意：MimicMotion、MusePose、MagicAnimate、AnimateAnyone 等扩散视频/图像动画模型通常体积大、显存要求高，不适合直接打包进 APK。它们更适合作为离线教师模型；APP 内只放可在手机端运行的轻量 TFLite 学生模型。
+
+训练数据建议：准备 200+ 个不同人物/角色 reference，每个角色 16–72 帧唱跳动作，覆盖挥手、跳跃、踢腿、转身等大幅姿态。只用单个角色或少量图片集训练，通常会过拟合，难以支持“任意上传人物”。
+
+训练入口：
+
+```bash
+bash tools/pose_model_factory/prepare_mimicmotion_teacher.sh
+python3 tools/pose_model_factory/build_distill_dataset.py \
+  --teacher-output build/pose_teacher/outputs \
+  --dataset build/pose_student_dataset \
+  --size 256
+python3 tools/pose_model_factory/train_pose_student.py \
+  --dataset build/pose_student_dataset \
+  --tflite app/src/main/assets/models/pose_driven_generator.tflite \
+  --size 256 \
+  --epochs 80
+python3 tools/pose_driven_model/inspect_pose_driven_tflite.py \
+  app/src/main/assets/models/pose_driven_generator.tflite
+```
+
+更完整的训练、模型选择、数据要求和导出契约见 `docs/building_a_pose_driven_model.md` 与 `tools/pose_model_factory/README.md`。
 
 ## 项目结构
 
